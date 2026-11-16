@@ -11884,6 +11884,9 @@ const setBar=h=>{const el=document.getElementById("rBar");setH(el,h&&el&&el._h?h
 /* 탭·필터·검색·정렬을 바꿀 때: 화면에 붙잡아 둔 반품을 놓고 조건대로 새로 뽑는다. full이면 표를 처음부터 다시 그린다(표 설정 기본값 재기). */
 function refresh(full){S.pin=null;body(full);}
 const KO=new Intl.Collator("ko").compare;   /* localeCompare(…,"ko")는 부를 때마다 비교기를 새로 만들어 2만 건 정렬이 몇 배 느리다 */
+/* 줄 위치(표 안 위·아래, 펼친 줄 포함). 그린 뒤 브라우저가 어차피 배치를 마친 다음에 읽어 두어, 줄이 빠질 때 배치를 다시 계산하지 않고 미끄러뜨린다. */
+let rowPos=new WeakMap(),posT=0;
+const keepPos=tb=>{clearTimeout(posT);posT=setTimeout(()=>{for(const tr of tb.children)if(tr.classList.contains("r-row")){const e=tr._more||tr;rowPos.set(tr,[tr.offsetTop,e.offsetTop+e.offsetHeight]);}},0);};
 let cond=[];   /* 탭·검색·필터 조건에 맞는 반품(붙잡아 둔 줄 제외). 엑셀 내보내기·모두 선택이 쓴다. */
 function body(full){
   const b=document.getElementById("rBody");if(!b)return;
@@ -11913,7 +11916,8 @@ function body(full){
      그래야 누가 위쪽 건을 처리해도 줄이 밀려 엉뚱한 건을 누르지 않는다. 새로 조건에 들어온 반품은 제자리(정렬 순서)에 끼운다. */
   let list=cond;
   if(S.pin){
-    const out=S.pin.map(k=>G.get(k)).filter(Boolean),at=new Map(out.map((g,i)=>[g.key,i])),add=new Map();let prev=-1;
+    /* 단, 미처리 탭에서 처리완료가 된 반품은 누가 처리했든 바로 뺀다(처리완료 탭으로 넘어감). 아래 줄은 patchRows가 부드럽게 끌어올린다. */
+    const out=S.pin.map(k=>G.get(k)).filter(g=>g&&!(S.tab==="todo"&&g.done)),at=new Map(out.map((g,i)=>[g.key,i])),add=new Map();let prev=-1;
     for(const g of cond){if(at.has(g.key)){prev=at.get(g.key);continue;}if(!add.has(prev))add.set(prev,[]);add.get(prev).push(g);}
     list=add.get(-1)||[];out.forEach((g,i)=>{list.push(g);if(add.has(i))list.push(...add.get(i));});
   }
@@ -11978,6 +11982,7 @@ function body(full){
   setBar(bar);setH(document.getElementById("rFoot"),foot);
   const wrap=b.querySelector(".v-table-wrap");if(keepX||keepY){wrap.scrollLeft=keepX;wrap.scrollTop=keepY;}
   let i=0;for(const tr of wrap.querySelector("tbody").children)if(tr.classList.contains("r-row")){tr._h=rows[i++][1];const n=tr.nextElementSibling;tr._more=n&&n.classList.contains("r-more")?n:null;}
+  keepPos(wrap.querySelector("tbody"));
   /* 내 표 설정(열 폭·행 높이·열 고정) 적용 */
   if(window.TK)TK.apply(wrap.querySelector("table"),"returns",{freeze:0,clickSort:true,redraw:()=>refresh(true),resort:()=>refresh(),val:retVal,items:()=>[...G.values()]});
   queueTags();
@@ -11991,10 +11996,16 @@ function patchRows(tb,rows){
     if(!tr||(tr._h!==h&&!(busy&&tr.contains(busy)))){tpl.innerHTML=h;tr=tpl.firstElementChild;tr._h=h;tr._more=tr.nextElementSibling;}
     want.push(tr);
   }
-  const keep=new Set(want);
-  for(const tr of old.values())if(!keep.has(tr)){if(tr._more)tr._more.remove();tr.remove();}
+  const keep=new Set(want),gone=[...old.values()].filter(tr=>!keep.has(tr));
+  /* 빠지는 줄이 있으면 아래 줄이 순간이동하지 않고 0.18초 동안 위로 미끄러지게 한다. 올라갈 거리 = 위에서 빠진 줄 높이의 합(저장해 둔 위치로 계산, 배치를 새로 읽지 않는다).
+     새로 끼어든(또는 다시 그린) 줄부터 아래는 거리가 맞지 않으니 움직이지 않는다. */
+  const cut=gone.length&&!matchMedia("(prefers-reduced-motion: reduce)").matches?gone.map(tr=>rowPos.get(tr)).filter(Boolean):null;
+  for(const tr of gone){if(tr._more)tr._more.remove();tr.remove();}
   let cur=tb.firstElementChild;
   for(const tr of want)for(const n of tr._more?[tr,tr._more]:[tr]){if(n===cur)cur=cur.nextElementSibling;else tb.insertBefore(n,cur);}
+  if(cut&&cut.length)for(const tr of want){const p=old.get(tr.dataset.row)===tr&&rowPos.get(tr);if(!p)break;let d=0;for(const [t,b] of cut)if(t<p[0])d+=b-t;
+    if(d)for(const n of tr._more?[tr,tr._more]:[tr])n.animate([{transform:`translateY(${d}px)`},{transform:"none"}],{duration:180,easing:"cubic-bezier(.2,.7,.3,1)"});}
+  keepPos(tb);
 }
 let xlsxP=null;
 function loadXlsx(){
