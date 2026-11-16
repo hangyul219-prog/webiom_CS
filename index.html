@@ -11699,7 +11699,10 @@ function askOut(g){uiPrompt("반출\n몇 개 반출했나요? 숫자만 입력�
 /* 묶음은 늘 들고 있고, 바뀐 줄(dirty)이 든 묶음만 다시 계산한다. VOC 연결·날짜가 바뀌면 전부 다시 계산한다.
    GM: 묶음 키 → 묶음, KOF: 줄 id → 묶음 키, ver: 줄이 바뀔 때마다 1씩 오른다. */
 const GM=new Map(),KOF=new Map(),dirty=new Set();
-let ver=0,gVer=-1,gVoc=null,gDay="",gMemo=[],searchT=0,baseMemo=null;
+let ver=0,gVer=-1,gVoc=null,gDay="",gMemo=[],searchT=0,baseMemo=null,gResort=true;
+/* 묶음의 순서·포함 여부를 정하는 값 전부: 기본 정렬 키, 화면에 띄우는지, 지금 조건(검색·필터·열 머리 필터)에 맞는지, 열 머리로 고른 정렬 칸 값 */
+const sortSig=g=>{const so=window.TK?(JSON.parse(TK.stateKey("returns"))[1]||null):null;
+  return [g.date,g.seller,g.memo.length,g.no,g.done||g.date>=TODO_FROM,matches(g),so?retVal(g,so.i):""].join("\u0001");};
 const keyOf=it=>[it.date,it.no,it.retTrack].join("|");
 function calc(g){
   const L=g.lines;for(const l of L)l._n=nos(l.result);   /* 처리결과 필터 건수를 셀 때 매번 띄어쓰기를 지우지 않게 */
@@ -11713,7 +11716,10 @@ function calc(g){
 function groups(){
   const day=todayIso();
   if(gVer===ver&&gVoc===vocIdx&&gDay===day)return gMemo;
-  const touched=new Set();
+  const touched=new Set(),full=gVoc!==vocIdx||gDay!==day,was=new Map();
+  /* 처리결과만 바뀌면 2만 건을 다시 거르고 정렬하지 않도록(body의 baseMemo), 바뀌는 묶음의 '정렬·거르기에 쓰는 값'을 바꾸기 전에 적어 둔다.
+     묶음이 새로 생기거나 없어지거나, 그 값이 하나라도 바뀌면 gResort를 켠다. */
+  if(!full&&!gResort)for(const id of dirty){const ok=KOF.get(id);if(ok==null){gResort=true;break;}if(!was.has(ok))was.set(ok,sortSig(GM.get(ok)));}
   for(const id of dirty){
     const ok=KOF.get(id),it=items.get(id),nk=it?keyOf(it):null;
     if(ok!=null){const g=GM.get(ok),i=g.lines.findIndex(l=>l.id===id);if(ok===nk)g.lines[i]=it;else g.lines.splice(i,1);touched.add(ok);}
@@ -11721,12 +11727,13 @@ function groups(){
     if(it)KOF.set(id,nk);else KOF.delete(id);
   }
   dirty.clear();
-  for(const k of gVoc!==vocIdx||gDay!==day?GM.keys():touched){const g=GM.get(k);if(!g)continue;if(g.lines.length)calc(g);else GM.delete(k);}
+  for(const k of full?GM.keys():touched){const g=GM.get(k);if(!g)continue;if(g.lines.length)calc(g);else GM.delete(k);}
+  if(full)gResort=true;else if(!gResort)for(const k of touched){const g=GM.get(k);if(!g||!was.has(k)||was.get(k)!==sortSig(g)){gResort=true;break;}}
   gVer=ver;gVoc=vocIdx;gDay=day;aux=null;
   /* 이 날짜보다 이전 반품 중 미처리인 것은 화면에 띄우지 않는다(서버 자료는 그대로 둔다). */
   return gMemo=[...GM.values()].filter(g=>g.done||g.date>=TODO_FROM);
 }
-let aux=null;   /* 묶음에서 뽑은 판매처·택배사 목록, 처리결과별 건수 등. 묶음이 바뀌면 비운다. */
+let auxT=0,aux=null;   /* 묶음에서 뽑은 판매처·택배사 목록, 처리결과별 건수 등. 묶음이 바뀌면 비운다. */
 /* 빠른 선택 문구가 처리결과에 맞는지. 띄어쓰기는 무시하고, 'O개'는 아무 숫자+개, 뒤에 사유가 붙어도 맞는다. 문구마다 한 번만 만든다. */
 const reC=new Map(),pickRe=p=>reC.get(p)||reC.set(p,new RegExp("^"+nos(p).replace(/[.*+?^${}()|[\]\\]/g,"\\$&").replace("O개","\\d+개"))).get(p);
 const pickHit=(g,p)=>{const re=pickRe(p);return g.lines.some(l=>re.test(l._n));};
@@ -11845,7 +11852,10 @@ function drawFilters(all){
   const fopts=[["__other",`${DONE_TEXT} 외 전부`],...picks.map(p=>[p,p]),["__rest","그 외 처리결과"],["__pend",`${PENDING.join("·")} 전부`],["__sb","사방넷 반품처리 안 한 건"]];
   /* 목록·건수는 묶음이나 빠른 선택 문구가 바뀔 때만 다시 센다 */
   const pk=picks.join("\u0001");
-  if(!aux||aux.all!==all||aux.pk!==pk)aux={all,pk,sellers:uniq(all.map(g=>g.seller||NONE)).sort(ko),couriers:uniq(all.map(g=>g.courier)).sort(ko),cnt:Object.fromEntries(fopts.map(([v])=>[v,all.filter(g=>resHit(g,v)).length]))};
+  const mk=()=>({all,pk,sellers:uniq(all.map(g=>g.seller||NONE)).sort(ko),couriers:uniq(all.map(g=>g.courier)).sort(ko),cnt:Object.fromEntries(fopts.map(([v])=>[v,all.filter(g=>resHit(g,v)).length]))});
+  /* 처리결과만 바뀐 경우(문구 목록 그대로)에는 지난 건수로 먼저 그리고, 2만 건 다시 세기는 클릭 처리 뒤 한가할 때 한다(필터 목록 건수가 잠깐 늦게 바뀐다). */
+  if(!aux||aux.pk!==pk)aux=mk();
+  else if(aux.all!==all&&!auxT){auxT=(window.requestIdleCallback||(f=>setTimeout(f,60)))(()=>{auxT=0;const a=groups();if(aux&&aux.all!==a){aux=null;if(document.getElementById("rSel"))drawFilters(a);}},{timeout:400});}
   const res=`<select class="v-filter${S.result?" set":""}" data-filter="result" aria-label="처리결과"><option value="">처리결과</option>${fopts.map(([v,t])=>`<option value="${esc(v)}"${S.result===v?" selected":""}>${esc(t)} (${aux.cnt[v].toLocaleString()})</option>`).join("")}</select>`;
   const html=opt("seller","판매처",aux.sellers)+opt("courier","택배사",aux.couriers)+res;
   /* 필터 목록을 펼쳐 둔 동안에는 건수가 바뀌어도 갈아 끼우지 않는다(닫으면 다시 그린다) */
@@ -11902,7 +11912,8 @@ function body(full){
   /* 거르기·정렬(약 2만 건)은 조건이 같으면 지난번 결과를 그대로 쓴다 */
   const bk=JSON.stringify([S.q,S.qf,S.seller,S.courier,S.result,S.from,S.to,dir,picks,window.TK?TK.stateKey("returns"):""]);
   let base;
-  if(baseMemo&&baseMemo.all===all&&baseMemo.k===bk)base=baseMemo.base;
+  /* 묶음 목록이 새로 만들어졌어도 순서·포함 여부가 그대로면(gResort 꺼짐, 처리결과만 바뀐 경우 등) 지난 정렬 결과를 쓴다. 묶음은 같은 객체를 고쳐 쓰므로 내용은 새것이다. */
+  if(baseMemo&&baseMemo.k===bk&&(baseMemo.all===all||!gResort)){base=baseMemo.base;baseMemo.all=all;}
   else{
     /* 기본 정렬: 반품일(미처리 탭은 오래된 날부터, 나머지는 최근부터) → 같은 날짜 안에서 판매처(가나다, 공란은 맨 뒤)
        → 같은 판매처 안에서는 반품메모(노란 점) 있는 건을 아래로 → 반품번호 */
@@ -11911,6 +11922,7 @@ function body(full){
     if(window.TK)TK.sortList("returns",base,retVal);   /* 열 머리 메뉴로 고른 정렬 */
     baseMemo={all,k:bk,base};
   }
+  gResort=false;
   cond=S.tab==="all"?base:S.tab==="out"?base.filter(g=>g.out):S.tab==="voc"?base.filter(g=>g.voc.length):base.filter(g=>(S.tab==="done")===g.done);
   /* 화면에 있던 반품은 나나 다른 사람이 처리해 조건에서 벗어나도, 탭·필터·검색을 바꾸기 전까지 그 자리에 그대로 둔다(엑셀 필터처럼).
      그래야 누가 위쪽 건을 처리해도 줄이 밀려 엉뚱한 건을 누르지 않는다. 새로 조건에 들어온 반품은 제자리(정렬 순서)에 끼운다. */
@@ -11922,8 +11934,9 @@ function body(full){
     list=add.get(-1)||[];out.forEach((g,i)=>{list.push(g);if(add.has(i))list.push(...add.get(i));});
   }
   shown=list;S.pin=shown.slice(0,S.limit).map(g=>g.key);
-  const tabs=[["todo","미처리",base.filter(g=>!g.done).length],["done","처리완료",base.filter(g=>g.done).length],["out","반출",base.filter(g=>g.out).length],["voc","VOC",base.filter(g=>g.voc.length).length],["all","전체",base.length]];
-  const sbTodo=base.filter(g=>g.needSb).length;
+  /* 탭 건수는 한 번 돌며 같이 센다(2만 건을 다섯 번 거르지 않게) */
+  let nDone=0,nOut=0,nVoc=0,sbTodo=0;for(const g of base){if(g.done)nDone++;if(g.out)nOut++;if(g.voc.length)nVoc++;if(g.needSb)sbTodo++;}
+  const tabs=[["todo","미처리",base.length-nDone],["done","처리완료",nDone],["out","반출",nOut],["voc","VOC",nVoc],["all","전체",base.length]];
   setH(document.getElementById("rTabs"),`<div class="v-tabs" role="tablist">${tabs.map(t=>`<button type="button" class="v-tab${S.tab===t[0]?" on":""}" role="tab" aria-selected="${S.tab===t[0]}" data-act="tab" data-v="${t[0]}">${t[1]}<small>${t[2]}</small>${t[0]==="done"&&sbTodo?`<span class="v-pill t-red r-sbn" title="사방넷 반품처리 안 한 건 ${sbTodo}건">사방넷 ${sbTodo}</span>`:""}</button>`).join("")}</div>`);
   if(!shown.length){
     b._head=null;
