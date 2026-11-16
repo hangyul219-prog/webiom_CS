@@ -11458,7 +11458,9 @@ const fillSeller=it=>{if(String(it.seller||"").trim())return it;const m=String(i
 console.assert(fillSeller({memo:"GS/7포입 2개 입고"}).seller==="GSSHOP(센터)"&&fillSeller({memo:"온스타일 회수"}).seller==="CJ온스타일(센터)"&&fillSeller({memo:"풀필"}).seller==="네이버"&&fillSeller({seller:"쿠팡",memo:"GS"}).seller==="쿠팡"&&!fillSeller({memo:"단순변심"}).seller,"판매처 채우기 자가 점검 실패");
 /* 반품메모에 '풀필먼트'·'GS'가 있는 반품은 주문번호를 비운다. 이미 등록된 줄은 서버 값을 두고 불러올 때 비우고(화면·검색·엑셀·VOC 연결 모두 빈 칸),
    새로 붙여넣는 줄은 빈 칸으로 저장한다. 같은 줄을 다시 붙여넣어도 겹치지 않게 id는 원래 주문번호로 만든다. */
-const NO_ORDER=/풀필먼트|GS/,noOrder=it=>NO_ORDER.test(it.memo||"")?{...it,orderNo:""}:it;
+/* NS홈쇼핑 주문번호 끝의 '_1'은 뗀다(불러올 때·붙여넣을 때 모두). */
+const NO_ORDER=/풀필먼트|GS/,NS_SELLER=/NS홈쇼핑|^NSS$/i,noOrder=it=>NO_ORDER.test(it.memo||"")?{...it,orderNo:""}:NS_SELLER.test(it.seller||"")&&/_1$/.test(it.orderNo||"")?{...it,orderNo:it.orderNo.slice(0,-2)}:it;
+console.assert(noOrder({seller:"NS홈쇼핑_CJ직배",orderNo:"261109085245_1"}).orderNo==="261109085245"&&noOrder({seller:"NS홈쇼핑",orderNo:"261109085245_12"}).orderNo==="261109085245_12"&&noOrder({seller:"쿠팡",orderNo:"1_1"}).orderNo==="1_1","NS홈쇼핑 _1 떼기 자가 점검 실패");
 console.assert(noOrder({memo:"GS",orderNo:"1"}).orderNo===""&&noOrder({memo:"풀필먼트 파손",orderNo:"1"}).orderNo===""&&noOrder({memo:"단순 변심",orderNo:"1"}).orderNo==="1"&&noOrder({orderNo:"1"}).orderNo==="1","주문번호 비우기 자가 점검 실패");
 console.assert(MEMO_SKIP.test("GS")&&MEMO_SKIP.test("풀필먼트")&&MEMO_SKIP.test("GS 풀필먼트")&&!MEMO_SKIP.test("GS 파손")&&!MEMO_SKIP.test("단순 변심"),"반품 메모 색칠 기준 자가 점검 실패");
 /* 붙여넣은 글자를 등록할 줄(fresh)·처리결과만 채울 줄(fill)·이미 있는 줄(dup)·읽지 못한 줄(errs)로 나눈다.
@@ -11487,7 +11489,7 @@ function analyze(text){
     it.qty=Number(get("qty").replace(/[^\d.-]/g,""))||0;
     const key=[date,it.no,it.orderNo,it.retTrack,product,it.qty].join("|"),occ=(seen.get(key)||0)+1;seen.set(key,occ);
     it.id="r"+date.replace(/-/g,"")+"_"+hash(key+"|"+occ);
-    if(NO_ORDER.test(it.memo||""))delete it.orderNo;
+    const on=noOrder(it).orderNo;if(on)it.orderNo=on;else delete it.orderNo;
     const ex=items.get(it.id);
     if(!ex)out.fresh.push(it);else if(it.result&&!ex.result)out.fill.push(it);else out.dup++;
   });
