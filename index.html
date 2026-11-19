@@ -12010,15 +12010,15 @@ function body(full){
   if(S.copy&&!G.has(S.copy.key))S.copy=null;
   selCheck();   /* 체크가 바뀌면 다른 사람 화면에 바로 알린다(체크하는 곳은 모두 body를 부른다) */
   drawKpis(all);drawFilters(all);
-  /* 미처리 탭은 오래된(급한) 반품부터, 나머지 탭은 최근 반품부터 */
-  const dir=S.tab==="todo"?-1:1;
+  /* 모든 탭에서 최근 반품부터(2026-11-19 요청: 미처리도 최근부터). 오래된 순은 반품일 열 머리를 눌러 바꾼다. */
+  const dir=1;
   /* 거르기·정렬(약 2만 건)은 조건이 같으면 지난번 결과를 그대로 쓴다 */
   const bk=JSON.stringify([S.q,S.qf,S.seller,S.courier,S.result,S.from,S.to,dir,picks,window.TK?TK.stateKey("returns"):""]);
   let base;
   /* 묶음 목록이 새로 만들어졌어도 순서·포함 여부가 그대로면(gResort 꺼짐, 처리결과만 바뀐 경우 등) 지난 정렬 결과를 쓴다. 묶음은 같은 객체를 고쳐 쓰므로 내용은 새것이다. */
   if(baseMemo&&baseMemo.k===bk&&(baseMemo.all===all||!gResort)){base=baseMemo.base;baseMemo.all=all;}
   else{
-    /* 기본 정렬: 반품일(미처리 탭은 오래된 날부터, 나머지는 최근부터) → 같은 날짜 안에서 판매처(가나다, 공란은 맨 뒤)
+    /* 기본 정렬: 반품일(최근부터) → 같은 날짜 안에서 판매처(가나다, 공란은 맨 뒤)
        → 같은 판매처 안에서는 반품메모(노란 점) 있는 건을 아래로 → 반품번호 */
     base=all.filter(matches).sort((x,y)=>dir*(x.date<y.date?1:x.date>y.date?-1:0)
       ||(!x.seller-!y.seller)||KO(x.seller,y.seller)||(!!x.memo.length-!!y.memo.length)||(Number(x.no)||0)-(Number(y.no)||0));
