@@ -11443,7 +11443,7 @@ const ageOf=date=>Math.floor((new Date(todayIso()+"T00:00:00")-new Date(date+"T0
 /* pin: 지금 화면에 있는 반품(순서대로). copy: 처리결과 복사 중인 원본 {key,text} */
 const S={tab:"todo",q:"",qf:"",seller:"",courier:"",result:"",from:"",to:"",limit:200,sel:new Set(),open:new Set(),started:false,loaded:false,err:"",pin:null,copy:null};
 /* vocIdx: 주문번호 → 같은 주문번호의 VOC 목록 */
-let items=new Map(),G=new Map(),shown=[],root,main,plan=null,vocIdx=new Map(),picks=[];
+let RAW=new Map(),items=new Map(),G=new Map(),shown=[],root,main,plan=null,vocIdx=new Map(),picks=[];
 
 /* ---------- 붙여넣기 해석 ---------- */
 /* 엑셀이 복사해 주는 탭 구분 글자. 칸 안에 줄바꿈이 있으면 엑셀이 따옴표로 감싸 주므로 그것도 한 칸으로 읽는다. */
@@ -11525,7 +11525,7 @@ function start(){
   const fail=e=>{console.error("returns sync failed",e);S.err="서버 권한을 확인해주세요. Firebase Realtime Database 규칙에서 webiomCs/v1/returns 경로의 읽기·쓰기를 허용해야 합니다.";S.loaded=true;badge();draw();};
   const offs=[F.api.onChildAdded(r,put,fail),F.api.onChildChanged(r,put,fail),F.api.onChildRemoved(r,s=>pend.set(s.key,null),fail),
     F.api.onValue(r,()=>{
-      for(const [id,v] of pend){if(v&&v.date)items.set(id,noOrder(fillSeller({...v,id})));else items.delete(id);dirty.add(id);}
+      for(const [id,v] of pend){if(v)RAW.set(id,v);else RAW.delete(id);if(v&&v.date)items.set(id,noOrder(fillSeller({...v,id})));else items.delete(id);dirty.add(id);}
       pend.clear();ver++;S.loaded=true;badge();draw();if(document.getElementById("rPaste"))preview();
     },fail)];
   const unPeer=F.api.onValue(rref("presence"),snap=>{const v=snap.val()||{};const p=Object.entries(v).filter(([k,x])=>k!==FBX.clientId&&x&&x.by&&!(srvNow()-x.at>PEER_TTL)).map(([,x])=>({...x,by:String(x.by),sel:arr(x.sel)}));
@@ -11640,17 +11640,58 @@ function placeTags(){
   setH(lay,rows.map(tr=>`<div class="r-ftag" style="top:${Math.round(tr.getBoundingClientRect().top-top0)}px">${peerTags(tr.dataset.row)}</div>`).join(""));
 }
 addEventListener("resize",()=>{if(isOn())queueTags();});
+/* ---------- 되돌리기 (Ctrl+Z, 엑셀처럼) ----------
+   이 창에서 내가 한 저장만 쌓는다(다른 사람 작업은 애초에 들어오지 않는다). 새로고침하면 비워진다.
+   되돌릴 때 그 뒤에 다른 사람이 같은 줄을 바꿨으면 그 줄은 건너뛰고 알려 준다. */
+const UNDO=[],UNDO_MAX=100;
+const isTs=v=>!!v&&typeof v==="object"&&!Array.isArray(v)&&Object.keys(v).length===1&&".sv" in v||!!(v&&v.__ts);   /* serverTimestamp 자리표시 */
+const rawAt=path=>{const [,id,...f]=path.split("/");let v=RAW.get(id);for(const k of f)v=v==null?v:v[k];return v===undefined?null:v;};
+const clone=v=>v==null?null:JSON.parse(JSON.stringify(v));
+/* 내가 쓴 값(after)이 지금도 그대로인가. 서버 시각 자리는 비교하지 않고, 변경 로그(hist)는 따지지 않는다. */
+function same(after,cur){
+  if(isTs(after))return true;
+  if(after==null||after==="")return cur==null||cur==="";
+  if(typeof after!=="object")return cur!=null&&String(cur)===String(after);
+  if(!cur||typeof cur!=="object")return false;
+  for(const k of new Set([...Object.keys(after),...Object.keys(cur)]))if(k!=="hist"&&!same(after[k],cur[k]))return false;
+  return true;}
+/* 반품 자료 저장은 모두 여기로: 되돌리기 기록을 남기고 서버에 쓴다. hist(변경 로그)는 되돌리지 않는다. */
+function commit(ups,label){
+  const F=fb(),rec={label,ch:[]};
+  for(const [path,after] of Object.entries(ups))if(path.startsWith("items/")&&!path.includes("/hist/"))rec.ch.push([path,clone(rawAt(path)),after]);
+  if(rec.ch.length){UNDO.push(rec);if(UNDO.length>UNDO_MAX)UNDO.shift();}
+  return F.api.update(rref(),ups).catch(e=>{const i=UNDO.indexOf(rec);if(i>=0)UNDO.splice(i,1);throw e;});
+}
+function undo(rec){
+  const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
+  if(!rec){rec=UNDO.pop();if(!rec){toast("되돌릴 작업이 없습니다.");return;}}else{const i=UNDO.indexOf(rec);if(i<0)return;UNDO.splice(i,1);}
+  const byId=new Map();for(const c of rec.ch){const id=c[0].split("/")[1];if(!byId.has(id))byId.set(id,[]);byId.get(id).push(c);}
+  const ups={},ts=F.api.serverTimestamp(),me=who(),hk="h"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  let ok=0,skip=0;
+  for(const [id,cs] of byId){
+    if(!cs.every(([path,,after])=>same(after,rawAt(path)))){skip++;continue;}
+    ok++;
+    for(const [path,before] of cs){
+      if(path.split("/").length===2&&before&&RAW.get(id)?.hist)before.hist={...(before.hist||{}),...RAW.get(id).hist};   /* 되살릴 때 그 사이 생긴 로그도 지키기 */
+      ups[path]=before;
+      const f=path.split("/")[2];
+      if(f==="result"||f==="memo"){const cur=String(rawAt(path)||""),b=String(before||"");
+        if(cur!==b)ups[`items/${id}/hist/${hk}`]={...(f==="memo"?{k:"memo"}:{}),f:cur,t:b,by:me,at:ts,u:1};}
+    }
+  }
+  const msg=skip?(ok?` 다른 사람이 그 뒤에 바꾼 ${skip}줄은 그대로 두었습니다.`:""):"";
+  if(!ok){toast(`'${rec.label}'은(는) 그 뒤에 다른 사람이 바꿔서 되돌리지 않았습니다.`);return;}
+  F.api.update(rref(),ups).then(()=>{toast(`되돌렸습니다: ${rec.label}.${msg}`);if(typeof hideUndoToast==="function")hideUndoToast();},saveFail);
+  noteAct([...byId.keys()],"되돌리기");
+}
 /* 고른 상자들을 지운다. 휴지통은 없고, 10초 동안 아래 알림의 '되돌리기'로 되살릴 수 있다. */
 function deleteGroups(keys){
   const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
-  const ups={},back={};let n=0;
-  for(const k of keys){const g=G.get(k);if(!g)continue;n++;for(const {id,...row} of g.lines){ups["items/"+id]=null;back["items/"+id]=row;}}
+  const ups={};let n=0;
+  for(const k of keys){const g=G.get(k);if(!g)continue;n++;for(const {id} of g.lines)ups["items/"+id]=null;}
   if(!n)return;
-  F.api.update(rref(),ups).then(()=>showUndoToast(`반품 ${n}건을 삭제했습니다.`,()=>{
-    /* 그 사이 같은 줄을 다시 붙여넣어 등록했으면 그 줄은 그대로 둔다. */
-    const re={};for(const [p,row] of Object.entries(back))if(!items.has(p.slice(6)))re[p]=row;
-    F.api.update(rref(),re).then(()=>toast("되돌렸습니다."),saveFail);
-  }),saveFail);
+  const label=`반품 ${n}건 삭제`;
+  commit(ups,label).then(()=>{const rec=UNDO[UNDO.length-1];showUndoToast(`반품 ${n}건을 삭제했습니다. (Ctrl+Z)`,()=>undo(rec));},saveFail);
 }
 async function savePlan(){
   const F=fb(),p=plan;if(!p||!(p.fresh.length+p.fill.length))return;
@@ -11660,7 +11701,7 @@ async function savePlan(){
   for(const it of p.fresh){const {id,...row}=it;ups["items/"+id]={...row,createdAt:ts,createdBy:me,...(isDone(row.result)?{doneAt:ts,doneBy:me}:{})};}
   for(const it of p.fill){ups[`items/${it.id}/result`]=it.result;ups[`items/${it.id}/doneAt`]=ts;ups[`items/${it.id}/doneBy`]=me;}
   try{
-    await F.api.update(rref(),ups);
+    await commit(ups,`붙여넣기 등록 ${(p.fresh.length+p.fill.length).toLocaleString()}줄`);
     toast(`${p.fresh.length.toLocaleString()}줄을 등록했습니다.`+(p.fill.length?` 처리결과 ${p.fill.length.toLocaleString()}줄 반영.`:""));
     closePaste();
   }catch(e){saveFail(e);if(btn)btn.disabled=false;}
@@ -11681,14 +11722,14 @@ function setResult(ids,text,k,seen){
   for(const id of ids){ups[`items/${id}/result`]=text||null;ups[`items/${id}/doneAt`]=d?ts:null;ups[`items/${id}/doneBy`]=d?me:null;
     /* 변경 로그: 처리결과가 바뀔 때마다 남긴다(붙여넣기 등록은 제외). 고객명 옆 '수정' 칩은 이미 있던 값을 바꾼 기록(f)만 센다. */
     const old=String(items.get(id)?.result||"");if(old!==(text||""))ups[`items/${id}/hist/${hk}`]={f:old,t:text||"",by:me,at:ts};}
-  F.api.update(rref(),ups).catch(saveFail);noteAct(ids,text||"미처리로 되돌림");
+  commit(ups,`처리결과 '${text||"미처리"}'`).catch(saveFail);noteAct(ids,text||"미처리로 되돌림");
 }
 /* 사방넷 반품처리 표시. 끄면 처리자·일시도 지운다. */
 function setSabang(ids,on){
   const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
   const ups={},ts=F.api.serverTimestamp(),me=who();
   for(const id of ids){ups[`items/${id}/sabangAt`]=on?ts:null;ups[`items/${id}/sabangBy`]=on?me:null;}
-  F.api.update(rref(),ups).catch(saveFail);noteAct(ids,on?"사방넷 처리":"사방넷 되돌림");
+  commit(ups,on?"사방넷 처리":"사방넷 되돌림").catch(saveFail);noteAct(ids,on?"사방넷 처리":"사방넷 되돌림");
 }
 /* 반출 표시(몇 개 반출했는지). 처리결과·미처리/처리완료와는 상관없는 단순 표시다. n이 0이면 지운다. */
 /* 반품메모 직접 수정: 한 상자(묶음)의 모든 줄에 같은 메모를 넣고, 누가 언제 고쳤는지 남긴다(메모 옆 '수정 · 이름'). */
@@ -11701,14 +11742,14 @@ function editMemo(g){
     const hk="h"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
     for(const id of ids){ups[`items/${id}/memo`]=t||null;ups[`items/${id}/memoAt`]=ts;ups[`items/${id}/memoBy`]=me;
       ups[`items/${id}/hist/${hk}`]={k:"memo",f:String(items.get(id)?.memo||"").trim(),t,by:me,at:ts};}
-    F.api.update(rref(),ups).catch(saveFail);noteAct(ids,"반품메모 수정");
+    commit(ups,"반품메모 수정").catch(saveFail);noteAct(ids,"반품메모 수정");
   });
 }
 function setOut(ids,n){
   const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
   const ups={},ts=F.api.serverTimestamp(),me=who();
   for(const id of ids){ups[`items/${id}/outN`]=n||null;ups[`items/${id}/outAt`]=n?ts:null;ups[`items/${id}/outBy`]=n?me:null;}
-  F.api.update(rref(),ups).catch(saveFail);noteAct(ids,n?`${n}개 반출`:"반출 지움");
+  commit(ups,n?`${n}개 반출`:"반출 지움").catch(saveFail);noteAct(ids,n?`${n}개 반출`:"반출 지움");
 }
 function askOut(g){uiPrompt("반출\n몇 개 반출했나요? 숫자만 입력하세요.",{value:String(g.lines.reduce((s,l)=>s+(Number(l.qty)||0),0)||1),placeholder:"개수",max:4}).then(t=>{
   if(t==null)return;const n=Number(t.trim());
@@ -11834,7 +11875,7 @@ function openLog(){
   const val=(h,v,end)=>v==null?'<span class="r-log-none">이전 기록 없음</span>':v?esc(v):`<span class="r-log-none">${h.k==="memo"?(end?"(지움)":"(없음)"):"미처리"}</span>`;
   w.innerHTML=`<div class="v-modal r-modal r-logm" role="dialog" aria-modal="true" aria-label="수정기록"><h2>수정기록</h2>
     <p class="v-save">처리결과·반품메모가 바뀐 기록입니다(붙여넣기 등록 제외). 최근 ${Math.min(all.length,LOG_MAX).toLocaleString()}건${all.length>LOG_MAX?` / 전체 ${all.length.toLocaleString()}건`:""} · 줄을 누르면 그 반품을 찾아 보여 줍니다.</p>
-    ${all.length?`<div class="v-errs r-logbox"><table class="v-simple r-logt"><thead><tr><th>수정일시</th><th>수정자</th><th>반품</th><th>항목</th><th>변경 내용</th></tr></thead><tbody>${all.slice(0,LOG_MAX).map(([h,g])=>`<tr data-act="log-go" data-v="${esc(g.key)}"><td class="r-log-t">${esc(fmtTs(h.at))}</td><td>${esc(h.by||"")}</td><td><b>${esc(uniq(g.lines.map(l=>l.customer)).join(", "))}</b></td><td>${h.k==="memo"?"반품메모":"처리결과"}</td><td>${val(h,h.f)} <i>→</i> ${val(h,h.t,1)}</td></tr>`).join("")}</tbody></table></div>`:'<div class="v-blank"><b>아직 수정기록이 없습니다</b>처리결과나 반품메모를 바꾸면 여기에 남습니다.</div>'}
+    ${all.length?`<div class="v-errs r-logbox"><table class="v-simple r-logt"><thead><tr><th>수정일시</th><th>수정자</th><th>반품</th><th>항목</th><th>변경 내용</th></tr></thead><tbody>${all.slice(0,LOG_MAX).map(([h,g])=>`<tr data-act="log-go" data-v="${esc(g.key)}"><td class="r-log-t">${esc(fmtTs(h.at))}</td><td>${esc(h.by||"")}</td><td><b>${esc(uniq(g.lines.map(l=>l.customer)).join(", "))}</b></td><td>${h.k==="memo"?"반품메모":"처리결과"}${h.u?' <span class="r-log-none">(되돌리기)</span>':""}</td><td>${val(h,h.f)} <i>→</i> ${val(h,h.t,1)}</td></tr>`).join("")}</tbody></table></div>`:'<div class="v-blank"><b>아직 수정기록이 없습니다</b>처리결과나 반품메모를 바꾸면 여기에 남습니다.</div>'}
     <div class="r-foot"><button type="button" class="v-btn" data-act="log-close">닫기</button></div></div>`;
   root.appendChild(w);w.querySelector("[data-act=log-close]").focus();
 }
@@ -11866,15 +11907,11 @@ function promptResult(g,seen,value){uiPrompt("처리결과를 입력하세요.\n
 function copyResult(){
   const F=fb(),c=S.copy;if(!c)return;if(!F){toast("서버에 연결되는 중입니다.");return;}
   const keys=[...S.sel].filter(k=>k!==c.key&&G.has(k));if(!keys.length){toast("처리결과를 붙일 반품을 체크하세요.");return;}
-  const lines=keys.flatMap(k=>G.get(k).lines),back={};
-  for(const l of lines)for(const f of ["result","doneAt","doneBy"])back[`items/${l.id}/${f}`]=l[f]==null?null:l[f];
+  const lines=keys.flatMap(k=>G.get(k).lines);
   S.copy=null;S.sel.clear();
   setResult(lines.map(l=>l.id),c.text);body();
-  showUndoToast(`처리결과 '${c.text}'을(를) ${keys.length.toLocaleString()}건에 복사했습니다.`,()=>{
-    /* 그 사이 지워진 반품은 되살리지 않는다 */
-    const re={};for(const [p,v] of Object.entries(back))if(items.has(p.split("/")[1]))re[p]=v;
-    F.api.update(rref(),re).then(()=>toast("되돌렸습니다."),saveFail);
-  });
+  const rec=UNDO[UNDO.length-1];
+  showUndoToast(`처리결과 '${c.text}'을(를) ${keys.length.toLocaleString()}건에 복사했습니다. (Ctrl+Z)`,()=>undo(rec));
 }
 function shell(){
   main._err=S.err;
@@ -12221,6 +12258,7 @@ function build(){
     /* 왼쪽 메뉴(화면 설정·시트 연동 등)의 키 입력은 그대로 둔다. */
     if(!root.classList.contains("on")||(e.target.closest&&e.target.closest(".side")))return;
     e.stopPropagation();
+    if((e.ctrlKey||e.metaKey)&&!e.altKey&&!e.shiftKey&&(e.code==="KeyZ")&&!document.querySelector(".ui-dlg-wrap,#rPaste")&&!(e.target.closest&&e.target.closest("input,textarea,select,[contenteditable]"))){e.preventDefault();undo();return;}
     if(e.key!=="Escape"||document.querySelector(".ui-dlg-wrap"))return;
     const a=document.activeElement;
     if(document.getElementById("rPaste")){e.preventDefault();closePaste();}
