@@ -11552,10 +11552,11 @@ function startVoc(){
     vocIdx=m;draw();
   },e=>console.error("returns voc link failed",e));
 }
-/* VOC 연결 기준. ① 주문번호가 같으면 연결. ② 꼬리(_1, _2, -001-001-001)를 뗀 주문번호가 같고 고객명이 비슷하면 연결.
+/* VOC 연결 기준. ① 주문번호가 같으면 연결. ② 꼬리(_1, _2, -001-001-001, 붙어 있는 001001·001001001)를 뗀 주문번호가 같고 고객명이 비슷하면 연결.
+   붙은 001은 두 번 이상 반복될 때만 뗀다(끝이 우연히 001 하나인 주문번호는 그대로).
    고객명 비슷함: 띄어쓰기·괄호 안 글자를 빼고 글자 수가 같으며, 자리마다 같은 글자거나 어느 한쪽이 *(가림)이다. */
 const BASE="\u0001";
-const ordBase=o=>String(o||"").trim().replace(/([_-]\d{1,3})+$/,"");
+const ordBase=o=>String(o||"").trim().replace(/([_-]\d{1,3})+$/,"").replace(/(?:001){2,}$/,"");
 const nmKey=s=>String(s||"").replace(/\(.*?\)|\s/g,"");
 const nameLike=(a,b)=>{a=nmKey(a);b=nmKey(b);return !!a&&a.length===b.length&&[...a].every((c,i)=>c===b[i]||c==="*"||b[i]==="*");};
 const vocOf=g=>{const out=new Map();
@@ -11563,7 +11564,7 @@ const vocOf=g=>{const out=new Map();
     const b=ordBase(o);if(!b)continue;
     for(const x of vocIdx.get(BASE+b)||[])if(!out.has(x.id)&&g.lines.some(l=>nameLike(l.customer,x.customer)))out.set(x.id,x);}
   return [...out.values()];};
-console.assert(ordBase("20261019421436-001-001-001")==="20261019421436"&&ordBase("20261019421436_2")==="20261019421436"&&ordBase("20261019421436")==="20261019421436"
+console.assert(ordBase("20240119649308001001001")==="20240119649308"&&ordBase("20240119649308001001")==="20240119649308"&&ordBase("20240119649308001")==="20240119649308001"&&ordBase("20240119649308001001001_1")==="20240119649308"&&ordBase("20261019421436-001-001-001")==="20261019421436"&&ordBase("20261019421436_2")==="20261019421436"&&ordBase("20261019421436")==="20261019421436"
   &&nameLike("오*희","오정희")&&nameLike("오정희","오정희")&&!nameLike("오*희","김정희")&&!nameLike("오*희","오정")&&nameLike("한*스 (한*스 드림)","한누스")&&!nameLike("","오정희"),"VOC 연결 기준 자가 점검 실패");
 /* 왼쪽 메뉴 "반품 관리" 옆 미처리 건수. 기준일을 넘긴 반품이 있으면 빨갛게 한다. */
 function badge(){
