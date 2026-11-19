@@ -11294,6 +11294,7 @@ document.getElementById("vocTemplateBtn").addEventListener("click",async e=>{
 #retApp .v-table tbody td.v-pick input{position:relative;top:6px}
 #retApp td.r-act .r-res{margin:-3px 0}
 #retApp .v-table td.r-memo{cursor:text}
+#retApp .v-table .r-ed{cursor:text}#retApp .v-table td.r-cust:hover,#retApp .v-table div.r-ed:hover{background:var(--v-hover)}
 #retApp .v-table td.r-memo:hover{background:var(--v-hover)}
 #retApp .r-memoby{display:inline-block;margin-left:6px;padding:0 6px;border-radius:9px;background:var(--v-side);color:var(--v-mut);font-size:11.5px;line-height:18px;white-space:nowrap;vertical-align:1px}
 #retApp .r-histby{cursor:help}
@@ -11679,8 +11680,8 @@ function undo(rec){
       if(!f){next=before?{...JSON.parse(JSON.stringify(before)),hist:{...(before.hist||{}),...((cur&&cur.hist)||{})}}:null;continue;}   /* 통째 지움·되살림 */
       if(!next)return;
       const was=at(f);if(before==null)delete next[f];else next[f]=before;
-      if((f==="result"||f==="memo")&&String(was||"")!==String(before||""))
-        next.hist={...(next.hist||{}),[hk]:{...(f==="memo"?{k:"memo"}:{}),f:String(was||""),t:String(before||""),by:me,at:srvNow(),u:1}};
+      if((f==="result"||HLAB[f])&&String(was??"")!==String(before??""))
+        next.hist={...(next.hist||{}),[hk]:{...(f!=="result"?{k:f}:{}),f:String(was??""),t:String(before??""),by:me,at:srvNow(),u:1}};
     }
     if(next&&next.hist&&!Object.keys(next.hist).length)delete next.hist;
     return next;
@@ -11752,6 +11753,22 @@ function editMemo(g){
     for(const id of ids){ups[`items/${id}/memo`]=t||null;ups[`items/${id}/memoAt`]=ts;ups[`items/${id}/memoBy`]=me;
       ups[`items/${id}/hist/${hk}`]={k:"memo",f:String(items.get(id)?.memo||"").trim(),t,by:me,at:ts};}
     commit(ups,"반품메모 수정").catch(saveFail);noteAct(ids,"반품메모 수정");
+  });
+}
+/* 고객명(한 상자 전체)·상품명·수량(줄 하나) 수기 수정. 바뀐 값은 수정기록(hist)에 남고 Ctrl+Z로 되돌릴 수 있다. */
+function editField(lines,f){
+  const lab=HLAB[f],cur=uniq(lines.map(l=>String(l[f]??"").trim())).join(", ");
+  uiPrompt(`${lab} 수정`+(lines.length>1?`\n이 반품의 ${lines.length}줄 모두 바뀝니다.`:""),{value:cur,placeholder:lab,max:f==="qty"?5:f==="customer"?40:120}).then(t=>{
+    if(t==null)return;t=t.trim();if(t===cur)return;
+    let v=t;
+    if(f==="qty"){const n=Number(t.replace(/[,\s개]/g,""));if(!Number.isInteger(n)||n<1){toast("수량은 1 이상의 숫자로 입력해주세요.");return;}v=n;}
+    else if(!t){toast(`${lab}을(를) 비울 수는 없습니다.`);return;}
+    const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
+    const ups={},ts=F.api.serverTimestamp(),me=who(),hk="h"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),ids=lines.map(l=>l.id);
+    for(const id of ids){const old=RAW.get(id)?.[f];if(String(old??"")===String(v))continue;
+      ups[`items/${id}/${f}`]=v;ups[`items/${id}/hist/${hk}`]={k:f,f:String(old??""),t:String(v),by:me,at:ts};}
+    if(!Object.keys(ups).length)return;
+    commit(ups,`${lab} 수정`).catch(saveFail);noteAct(ids,`${lab} 수정`);
   });
 }
 function setOut(ids,n){
@@ -11871,7 +11888,9 @@ function askCost(g,seen){uiPrompt(`${COST_TEXT} 완료\n비용이 얼마인가�
   setResult(g.lines.map(l=>l.id),`${COST_TEXT} 완료 (${n.toLocaleString("ko-KR")}원)`,g.key,seen);});}
 /* 한 상자(묶음)의 변경 기록. 같은 변경은 줄마다 같은 키로 들어가므로 키로 한 번만 센다. 최신 순. */
 function histOf(g){const m=new Map();for(const l of g.lines)for(const [k,h] of Object.entries(l.hist||{}))if(h&&!m.has(k))m.set(k,h);return [...m.values()].sort((a,b)=>(b.at||0)-(a.at||0));}
-const editsOf=g=>histOf(g).filter(h=>h.k==="memo"||h.f);
+const editsOf=g=>histOf(g).filter(h=>h.k||h.f);
+/* 변경 로그 항목 이름. k가 없으면 처리결과 */
+const HLAB={memo:"반품메모",customer:"고객명",product:"상품명",qty:"수량"},hlab=h=>HLAB[h.k]||"처리결과";
 /* 수정기록 창: 처리결과·반품메모 변경 로그 전체(붙여넣기 등록 제외). 줄을 누르면 그 반품을 검색한다. */
 const LOG_MAX=500;
 function openLog(){
@@ -11881,10 +11900,10 @@ function openLog(){
     const ml=g.lines.find(l=>l.memoAt);if(ml&&!histOf(g).some(h=>h.k==="memo"))all.push([{k:"memo",f:null,t:String(ml.memo||""),by:ml.memoBy,at:ml.memoAt},g]);}
   all.sort((a,b)=>(b[0].at||0)-(a[0].at||0));
   const w=document.createElement("div");w.className="v-modal-wrap";w.id="rLog";
-  const val=(h,v,end)=>v==null?'<span class="r-log-none">이전 기록 없음</span>':v?esc(v):`<span class="r-log-none">${h.k==="memo"?(end?"(지움)":"(없음)"):"미처리"}</span>`;
+  const val=(h,v,end)=>v==null?'<span class="r-log-none">이전 기록 없음</span>':v!==""?esc(v):`<span class="r-log-none">${h.k?(end?"(지움)":"(없음)"):"미처리"}</span>`;
   w.innerHTML=`<div class="v-modal r-modal r-logm" role="dialog" aria-modal="true" aria-label="수정기록"><h2>수정기록</h2>
     <p class="v-save">처리결과·반품메모가 바뀐 기록입니다(붙여넣기 등록 제외). 최근 ${Math.min(all.length,LOG_MAX).toLocaleString()}건${all.length>LOG_MAX?` / 전체 ${all.length.toLocaleString()}건`:""} · 줄을 누르면 그 반품을 찾아 보여 줍니다.</p>
-    ${all.length?`<div class="v-errs r-logbox"><table class="v-simple r-logt"><thead><tr><th>수정일시</th><th>수정자</th><th>반품</th><th>항목</th><th>변경 내용</th></tr></thead><tbody>${all.slice(0,LOG_MAX).map(([h,g])=>`<tr data-act="log-go" data-v="${esc(g.key)}"><td class="r-log-t">${esc(fmtTs(h.at))}</td><td>${esc(h.by||"")}</td><td><b>${esc(uniq(g.lines.map(l=>l.customer)).join(", "))}</b></td><td>${h.k==="memo"?"반품메모":"처리결과"}${h.u?' <span class="r-log-none">(되돌리기)</span>':""}</td><td>${val(h,h.f)} <i>→</i> ${val(h,h.t,1)}</td></tr>`).join("")}</tbody></table></div>`:'<div class="v-blank"><b>아직 수정기록이 없습니다</b>처리결과나 반품메모를 바꾸면 여기에 남습니다.</div>'}
+    ${all.length?`<div class="v-errs r-logbox"><table class="v-simple r-logt"><thead><tr><th>수정일시</th><th>수정자</th><th>반품</th><th>항목</th><th>변경 내용</th></tr></thead><tbody>${all.slice(0,LOG_MAX).map(([h,g])=>`<tr data-act="log-go" data-v="${esc(g.key)}"><td class="r-log-t">${esc(fmtTs(h.at))}</td><td>${esc(h.by||"")}</td><td><b>${esc(uniq(g.lines.map(l=>l.customer)).join(", "))}</b></td><td>${hlab(h)}${h.u?' <span class="r-log-none">(되돌리기)</span>':""}</td><td>${val(h,h.f)} <i>→</i> ${val(h,h.t,1)}</td></tr>`).join("")}</tbody></table></div>`:'<div class="v-blank"><b>아직 수정기록이 없습니다</b>처리결과나 반품메모를 바꾸면 여기에 남습니다.</div>'}
     <div class="r-foot"><button type="button" class="v-btn" data-act="log-close">닫기</button></div></div>`;
   root.appendChild(w);w.querySelector("[data-act=log-close]").focus();
 }
@@ -12051,7 +12070,7 @@ function body(full){
   const cp=v=>`<button type="button" class="r-copy" data-act="copy" data-v="${esc(v)}" title="눌러서 복사">${esc(v)}</button>`;
   const track=(g,v)=>{const u=trackUrl(g.courier,v);return u?`<button type="button" class="r-copy" data-act="copy" data-v="${esc(v)}" data-url="${esc(u)}" title="한 번 누르면 복사, 두 번 누르면 ${esc(g.courier)} 배송조회">${esc(v)}</button>`:cp(v);};
   /* 수정 칩: 이미 있던 처리결과·반품메모를 바꾼 기록이 있으면 고객명 옆에 '이름 수정(시간)', 마우스를 올리면 기록 툴팁(.r-htip). */
-  const histChip=g=>{const hs=editsOf(g);return hs.length?`<span class="r-memoby r-histby" title="" data-hist="${esc(JSON.stringify(hs.slice(0,20).map(h=>[fmtTs(h.at),h.by||"",(h.k==="memo"?"반품메모: ":"")+(h.f||"(없음)"),h.t||(h.k==="memo"?"(지움)":"미처리")])))}">${esc(hs[0].by||"")} 수정(${fmtTs(hs[0].at).slice(5)})</span>`:"";};
+  const histChip=g=>{const hs=editsOf(g);return hs.length?`<span class="r-memoby r-histby" title="" data-hist="${esc(JSON.stringify(hs.slice(0,20).map(h=>[fmtTs(h.at),h.by||"",(h.k?hlab(h)+": ":"")+(h.f!==""&&h.f!=null?h.f:"(없음)"),h.t!==""&&h.t!=null?String(h.t):(h.k?"(지움)":"미처리")])))}">${esc(hs[0].by||"")} 수정(${fmtTs(hs[0].at).slice(5)})</span>`:"";};
   const by=(name,ts)=>name||ts?esc([name,fmtTs(ts)].filter(Boolean).join(" · ")):"";
   const rows=shown.slice(0,S.limit).map(g=>{
     const k=esc(g.key),memo=many(g,"memo").join(", ");
@@ -12060,9 +12079,9 @@ function body(full){
     <td class="sticky c1 v-pick"><input type="checkbox" data-sel="${k}" aria-label="${esc(fmtDate(g.date)+" "+g.no+"번")} 선택"${S.sel.has(g.key)?" checked":""}></td>
     <td class="r-fit"><span title="${fmtDate(g.date)}${g.done?"":` · 반품일부터 ${g.age}일 지남`}"${!g.done&&g.age>AGED?' class="r-late"':""}>${fmtDate(g.date).slice(2)}</span></td>
     <td class="r-sel" title="${esc(g.seller)}">${g.seller?(([m,...s])=>`<b>${esc(m)}</b>${s.length?`<small>${esc(s.join(" "))}</small>`:""}`)(g.seller.split("_")):""}</td>
-    <td class="r-fit r-cust" title="${esc(many(g,"customer").join(", "))}">${esc(many(g,"customer").join(", "))}${histChip(g)}${voc?`<div class="r-tags">${voc}</div>`:""}</td>
-    <td class="r-fit r-prod">${g.lines.map(l=>`<div title="${esc(l.product)}">${esc(l.product)}</div>`).join("")}</td>
-    <td class="r-fit r-qty">${g.lines.map(l=>`<div>${l.qty||""}</div>`).join("")}</td>
+    <td class="r-fit r-cust r-ed" data-act="ed-cust" data-v="${k}" title="${esc(many(g,"customer").join(", "))} · 눌러서 수정">${esc(many(g,"customer").join(", "))}${histChip(g)}${voc?`<div class="r-tags">${voc}</div>`:""}</td>
+    <td class="r-fit r-prod">${g.lines.map(l=>`<div class="r-ed" data-act="ed-prod" data-v="${k}" data-id="${esc(l.id)}" title="${esc(l.product)} · 눌러서 수정">${esc(l.product)}</div>`).join("")}</td>
+    <td class="r-fit r-qty">${g.lines.map(l=>`<div class="r-ed" data-act="ed-qty" data-v="${k}" data-id="${esc(l.id)}" title="눌러서 수량 수정">${l.qty||""}</div>`).join("")}</td>
     <td class="r-memo${g.memo.length?" on":""}" data-act="memo" data-v="${k}" title="눌러서 반품메모 수정">${esc(memo)}${(ml=>ml?`<span class="r-memoby" title="${esc(by(ml.memoBy,ml.memoAt))} 수정">수정 · ${esc(ml.memoBy||"")}</span>`:"")(g.lines.find(l=>l.memoAt))}</td>
     <td class="r-ord">${many(g,"orderNo").map(cp).join("")}</td>
     <td class="r-fit r-trk">${many(g,"retTrack").map(v=>track(g,v)).join("")}${many(g,"orgTrack").map(v=>`<div class="r-org" title="원송장"><span>원</span>${cp(v)}</div>`).join("")}</td>
@@ -12217,7 +12236,9 @@ function build(){
       case "copy":if(e.detail===2&&el.dataset.url){window.open(el.dataset.url,"_blank","noopener");break;}if(e.detail>1)break;navigator.clipboard.writeText(v).then(()=>toast("복사했습니다: "+v),()=>toast("복사하지 못했습니다."));break;
       case "done":if(g)setResult(g.lines.map(l=>l.id),DONE_TEXT,v,seen);break;
       case "edit":if(g)promptResult(g,seen);break;
-      case "memo":if(g&&!String(getSelection()))editMemo(g);break;   /* 메모 글자를 끌어 선택(복사)하던 중이면 열지 않는다 */
+      case "memo":if(g&&!String(getSelection()))editMemo(g);break;
+      case "ed-cust":if(g&&!String(getSelection()))editField(g.lines,"customer");break;
+      case "ed-prod":case "ed-qty":{const l=g&&g.lines.find(x=>x.id===el.dataset.id);if(l&&!String(getSelection()))editField([l],el.dataset.act==="ed-qty"?"qty":"product");}break;   /* 메모 글자를 끌어 선택(복사)하던 중이면 열지 않는다 */
       case "copy-mode":{
         if(S.copy)S.copy=null;
         else{const k=[...S.sel][0],x=G.get(k);if(!x)break;S.copy={key:k,text:uniq(x.lines.map(l=>l.result)).join(", ")};S.sel.clear();}
