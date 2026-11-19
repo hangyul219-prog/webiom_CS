@@ -11392,7 +11392,7 @@ const DONE_TEXT="환불승인완료",NONE="(판매처 없음)";
 const PENDING=["확인중","홈쇼핑 매입가 비용처리 예정"],nos=s=>String(s||"").replace(/\s/g,"");
 const isPending=r=>nos(r).startsWith(nos(PENDING[0]))||(nos(r).startsWith(nos(PENDING[1]))&&!/完/.test(r));
 const isDone=r=>!!String(r||"").trim()&&!isPending(r);
-console.assert(!isDone("확인중")&&!isDone("확인중 - 고객 회신 대기")&&!isDone("확인중 - 사후 이의제기 접수 完(1111)")&&!isDone("홈쇼핑 매입가 비용처리 예정")&&isDone("홈쇼핑 매입가 비용처리 예정 - 完")&&isDone("쩐내 클레임")&&!isDone(""),"미처리 문구 자가 점검 실패");
+console.assert(!isDone("확인중")&&!isDone("확인중 - 고객 회신 대기")&&!isDone("확인중 - 사후 이의제기 접수 完(1111)")&&!isDone("홈쇼핑 매입가 비용처리 예정")&&isDone("홈쇼핑 매입가 비용처리 예정 - 完")&&isDone("쩐내 클레임")&&isDone("홈쇼핑 매입가 비용처리 완료 (25,000원)")&&!isDone(""),"미처리 문구 자가 점검 실패");
 /* 홈쇼핑 판매처는 사방넷 반품처리를 하지 않는다. '(온라인)'이 붙은 몰은 홈쇼핑이 아니다. */
 const HOMESHOP=/홈쇼핑|홈앤쇼핑|GS\s*(SHOP|샵)|CJ\s*(온스타일|오쇼핑)|SK\s*스토[아어]|알파쇼핑|신세계\s*(TV\s*)?쇼핑|^K\s*쇼핑|^NSS$|쇼핑엔티|공영쇼핑/i;
 const isHomeshop=s=>HOMESHOP.test(s||"")&&!/온라인/.test(s);
@@ -11660,8 +11660,10 @@ function setResult(ids,text,k,seen){
       uiConfirm(`그 사이 ${by?by+" 님이":"다른 사람이"} 이 반품의 처리결과를 '${now}'(으)로 바꿨습니다.\n내가 고른 '${text||"미처리"}'(으)로 바꿀까요?`,{ok:"내 것으로 바꾸기"}).then(ok=>{if(ok)setResult(ids,text);});
       return;}}
   const ups={},ts=F.api.serverTimestamp(),me=who();
-  const d=isDone(text);
-  for(const id of ids){ups[`items/${id}/result`]=text||null;ups[`items/${id}/doneAt`]=d?ts:null;ups[`items/${id}/doneBy`]=d?me:null;}
+  const d=isDone(text),hk="h"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  for(const id of ids){ups[`items/${id}/result`]=text||null;ups[`items/${id}/doneAt`]=d?ts:null;ups[`items/${id}/doneBy`]=d?me:null;
+    /* 수정기록: 이미 있던 처리결과를 바꾸거나 지울 때만 남긴다(미처리에서 처음 처리하는 건 수정이 아니다). */
+    const old=String(items.get(id)?.result||"");if(old&&old!==(text||""))ups[`items/${id}/hist/${hk}`]={f:old,t:text||"",by:me,at:ts};}
   F.api.update(rref(),ups).catch(saveFail);noteAct(ids,text||"미처리로 되돌림");
 }
 /* 사방넷 반품처리 표시. 끄면 처리자·일시도 지운다. */
@@ -11792,6 +11794,12 @@ function askCount(g,v,seen){uiPrompt(`${v}\n몇 개인가요? 숫자만 입력�
   if(t==null)return;const n=Number(t.trim());
   if(!Number.isInteger(n)||n<1){toast("1 이상의 숫자를 입력해주세요.");return;}
   setResult(g.lines.map(l=>l.id),v.replace("O개",n+"개"),g.key,seen);});}
+/* '홈쇼핑 매입가 비용처리'(예정 말고 완료 쪽) 문구는 비용을 물어 '홈쇼핑 매입가 비용처리 완료 (25,000원)'으로 넣는다. */
+const COST_TEXT="홈쇼핑 매입가 비용처리",isCostPick=v=>nos(v).startsWith(nos(COST_TEXT))&&!PENDING.includes(v);
+function askCost(g,seen){uiPrompt(`${COST_TEXT} 완료\n비용이 얼마인가요? 숫자만 입력하세요.`,{placeholder:"예: 25000",max:12}).then(t=>{
+  if(t==null)return;const n=Number(t.replace(/[,\s원]/g,""));
+  if(!Number.isInteger(n)||n<1){toast("1 이상의 금액을 숫자로 입력해주세요.");return;}
+  setResult(g.lines.map(l=>l.id),`${COST_TEXT} 완료 (${n.toLocaleString("ko-KR")}원)`,g.key,seen);});}
 /* '확인중' 같은 미처리 문구는 사유를 받아 '확인중 - 사유'로 넣는다. 비워 두면 문구만 넣는다. */
 function askReason(g,v,seen){uiPrompt(`${v}\n사유를 입력하세요. 비워 두고 확인을 눌러도 됩니다.`,{placeholder:"사유 (선택)",max:80}).then(t=>{
   if(t==null)return;t=t.trim();setResult(g.lines.map(l=>l.id),t?`${v} - ${t}`:v,g.key,seen);});}
@@ -11969,7 +11977,10 @@ function body(full){
       const out=`<button type="button" class="r-done r-out${g.out?" on":""}" data-act="out" data-v="${k}" title="${g.out?`${g.out}개 반출 · ${esc(by(g.outL.outBy,g.outL.outAt))} · 누르면 표시를 지웁니다`:"반출한 개수 표시"}">${g.out?`${g.out}개 반출`:"반출"}</button>`;
       const btns=g.done?(g.home?"":g.sb?`<button type="button" class="r-sbok" data-act="sb-undo" data-v="${k}" title="사방넷 반품처리 ${esc(by(g.lines[0].sabangBy,g.lines[0].sabangAt))} · 누르면 되돌립니다">사방넷 완료</button>`:`<button type="button" class="r-done" data-act="sb" data-v="${k}" title="사방넷 반품처리 완료로 표시">사방넷 처리</button>`)+out
         :`<button type="button" class="r-done" data-act="done" data-v="${k}" title="${DONE_TEXT}으로 처리">환불승인</button>${out}<select class="r-pick" data-pick="${k}" aria-label="다른 처리결과 고르기" title="다른 처리결과"><option value="">⋯</option><option value="__done" class="r-opt-done">처리완료</option>${picks.map(t=>`<option>${esc(t)}</option>`).join("")}<option value="__edit">직접 입력…</option><option value="__add">목록에 추가…</option>${picks.length?'<option value="__del">목록에서 빼기…</option>':""}</select>`;
-      return `<div class="r-res">${res}${btns?`<span class="r-btns">${btns}</span>`:""}</div>`;})()}</td></tr>`];
+      /* 처리결과 수정기록: 마지막으로 고친 사람 이름 칩, 마우스를 올리면 최근 기록이 보인다. */
+      const hs=Object.values(g.lines.reduce((a,l)=>l.hist&&Object.keys(l.hist).length>Object.keys(a).length?l.hist:a,{})).sort((a,b)=>(b.at||0)-(a.at||0));
+      const hist=hs.length?`<span class="r-memoby r-histby" title="처리결과 수정기록\n${esc(hs.slice(0,10).map(h=>`${fmtTs(h.at)} ${h.by||""}: '${h.f||"미처리"}' → '${h.t||"미처리"}'`).join("\n"))}${hs.length>10?`\n외 ${hs.length-10}건`:""}">수정 · ${esc(hs[0].by||"")}</span>`:"";
+      return `<div class="r-res">${res}${hist}${btns?`<span class="r-btns">${btns}</span>`:""}</div>`;})()}</td></tr>`];
   });
   /* 선택 작업 줄. 한 건만 고르고 그 건에 처리결과가 있으면 '처리결과 복사'를 띄운다. 누르면 눌린 채로 두고, 붙일 반품을 체크한 뒤 '완료'. */
   const one=S.sel.size===1&&G.get([...S.sel][0]),canCopy=one&&one.lines.some(l=>l.result);
@@ -12136,7 +12147,7 @@ function build(){
       if(t.dataset.filter==="result"&&t.value)S.tab=PENDING.includes(t.value)||t.value==="__pend"?"todo":S.tab==="todo"?"done":S.tab;
       refresh();}
     else if(t.dataset.sel){S.sel[t.checked?"add":"delete"](t.dataset.sel);body();}
-    else if(t.dataset.pick){const g=G.get(t.dataset.pick),v=t.value,seen=t.closest("tr.r-row")?.dataset.seen;t.value="";if(v==="__add")addPick();else if(v==="__del")delPick();else if(g&&v)v==="__edit"?promptResult(g,seen):v==="__done"?askDone(g.lines.map(l=>l.id),0,g.key,seen):v.includes("O개")?askCount(g,v,seen):PENDING.includes(v)?askReason(g,v,seen):setResult(g.lines.map(l=>l.id),v,g.key,seen);}
+    else if(t.dataset.pick){const g=G.get(t.dataset.pick),v=t.value,seen=t.closest("tr.r-row")?.dataset.seen;t.value="";if(v==="__add")addPick();else if(v==="__del")delPick();else if(g&&v)v==="__edit"?promptResult(g,seen):v==="__done"?askDone(g.lines.map(l=>l.id),0,g.key,seen):v.includes("O개")?askCount(g,v,seen):isCostPick(v)?askCost(g,seen):PENDING.includes(v)?askReason(g,v,seen):setResult(g.lines.map(l=>l.id),v,g.key,seen);}
     else if("selAll" in t.dataset){cond.forEach(g=>S.sel[t.checked?"add":"delete"](g.key));body();}
   });
   /* 처리결과 목록(⋯)을 닫으면, 열려 있는 동안 미뤄 둔 그 줄의 변경을 그린다. */
