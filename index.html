@@ -11296,6 +11296,14 @@ document.getElementById("vocTemplateBtn").addEventListener("click",async e=>{
 #retApp .v-table td.r-memo{cursor:text}
 #retApp .v-table td.r-memo:hover{background:var(--v-hover)}
 #retApp .r-memoby{display:inline-block;margin-left:6px;padding:0 6px;border-radius:9px;background:var(--v-side);color:var(--v-mut);font-size:11.5px;line-height:18px;white-space:nowrap;vertical-align:1px}
+#retApp .r-histby{cursor:help}
+.r-htip{position:fixed;z-index:10020;width:min(460px,calc(100vw - 16px));max-height:50vh;overflow:auto;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 12px 32px rgba(20,45,70,.2);font-size:12.5px;line-height:1.5;pointer-events:none}
+.r-htip[hidden]{display:none!important}
+.r-htip>b{display:block;margin-bottom:6px;font-size:12px;color:var(--muted)}
+.r-htip-row{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:8px;padding:5px 0;border-top:1px solid var(--line-2)}
+.r-htip-row span{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.r-htip-row em{font-style:normal;font-weight:600;white-space:nowrap}
+.r-htip-row p{margin:0;overflow-wrap:anywhere}.r-htip-row i{font-style:normal;color:var(--muted)}
 /* 함께 작업 중인 사람: 이름 칩(사람마다 색), 그 사람이 체크했거나 방금 처리한 줄은 왼쪽에 같은 색 띠 */
 #retApp .r-peers{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px}
 #retApp #rPeers{margin-left:12px}
@@ -11800,6 +11808,16 @@ function askCost(g,seen){uiPrompt(`${COST_TEXT} 완료\n비용이 얼마인가�
   if(t==null)return;const n=Number(t.replace(/[,\s원]/g,""));
   if(!Number.isInteger(n)||n<1){toast("1 이상의 금액을 숫자로 입력해주세요.");return;}
   setResult(g.lines.map(l=>l.id),`${COST_TEXT} 완료 (${n.toLocaleString("ko-KR")}원)`,g.key,seen);});}
+/* 수정기록 툴팁: '이름 수정(시간)' 칩에 마우스를 올리면 칩 아래에 기록 목록을 띄운다. */
+const hTip=document.createElement("div");hTip.className="r-htip";hTip.setAttribute("role","tooltip");hTip.hidden=true;document.body.appendChild(hTip);
+document.addEventListener("mouseover",e=>{const c=e.target.closest&&e.target.closest(".r-histby");
+  if(!c){hTip.hidden=true;return;}if(!hTip.hidden&&hTip._c===c)return;
+  let hs=[];try{hs=JSON.parse(c.dataset.hist||"[]");}catch(_){}
+  hTip.innerHTML=`<b>처리결과 수정기록</b>${hs.map(([t,by,f,to])=>`<div class="r-htip-row"><span>${esc(t)}</span><em>${esc(by)}</em><p>${esc(f)} <i>→</i> ${esc(to)}</p></div>`).join("")}`;
+  hTip._c=c;hTip.hidden=false;const r=c.getBoundingClientRect();
+  hTip.style.left=Math.max(8,Math.min(r.left,innerWidth-hTip.offsetWidth-8))+"px";
+  hTip.style.top=(r.bottom+6+hTip.offsetHeight>innerHeight?r.top-6-hTip.offsetHeight:r.bottom+6)+"px";});
+addEventListener("scroll",()=>{hTip.hidden=true;},true);
 /* '확인중' 같은 미처리 문구는 사유를 받아 '확인중 - 사유'로 넣는다. 비워 두면 문구만 넣는다. */
 function askReason(g,v,seen){uiPrompt(`${v}\n사유를 입력하세요. 비워 두고 확인을 눌러도 됩니다.`,{placeholder:"사유 (선택)",max:80}).then(t=>{
   if(t==null)return;t=t.trim();setResult(g.lines.map(l=>l.id),t?`${v} - ${t}`:v,g.key,seen);});}
@@ -11977,9 +11995,9 @@ function body(full){
       const out=`<button type="button" class="r-done r-out${g.out?" on":""}" data-act="out" data-v="${k}" title="${g.out?`${g.out}개 반출 · ${esc(by(g.outL.outBy,g.outL.outAt))} · 누르면 표시를 지웁니다`:"반출한 개수 표시"}">${g.out?`${g.out}개 반출`:"반출"}</button>`;
       const btns=g.done?(g.home?"":g.sb?`<button type="button" class="r-sbok" data-act="sb-undo" data-v="${k}" title="사방넷 반품처리 ${esc(by(g.lines[0].sabangBy,g.lines[0].sabangAt))} · 누르면 되돌립니다">사방넷 완료</button>`:`<button type="button" class="r-done" data-act="sb" data-v="${k}" title="사방넷 반품처리 완료로 표시">사방넷 처리</button>`)+out
         :`<button type="button" class="r-done" data-act="done" data-v="${k}" title="${DONE_TEXT}으로 처리">환불승인</button>${out}<select class="r-pick" data-pick="${k}" aria-label="다른 처리결과 고르기" title="다른 처리결과"><option value="">⋯</option><option value="__done" class="r-opt-done">처리완료</option>${picks.map(t=>`<option>${esc(t)}</option>`).join("")}<option value="__edit">직접 입력…</option><option value="__add">목록에 추가…</option>${picks.length?'<option value="__del">목록에서 빼기…</option>':""}</select>`;
-      /* 처리결과 수정기록: 마지막으로 고친 사람 이름 칩, 마우스를 올리면 최근 기록이 보인다. */
+      /* 처리결과 수정기록: '이름 수정(시간)' 칩, 마우스를 올리면 기록 툴팁(.r-htip)이 뜬다. */
       const hs=Object.values(g.lines.reduce((a,l)=>l.hist&&Object.keys(l.hist).length>Object.keys(a).length?l.hist:a,{})).sort((a,b)=>(b.at||0)-(a.at||0));
-      const hist=hs.length?`<span class="r-memoby r-histby" title="처리결과 수정기록\n${esc(hs.slice(0,10).map(h=>`${fmtTs(h.at)} ${h.by||""}: '${h.f||"미처리"}' → '${h.t||"미처리"}'`).join("\n"))}${hs.length>10?`\n외 ${hs.length-10}건`:""}">수정 · ${esc(hs[0].by||"")}</span>`:"";
+      const hist=hs.length?`<span class="r-memoby r-histby" data-hist="${esc(JSON.stringify(hs.slice(0,20).map(h=>[fmtTs(h.at),h.by||"",h.f||"미처리",h.t||"미처리"])))}">${esc(hs[0].by||"")} 수정(${fmtTs(hs[0].at).slice(5)})</span>`:"";
       return `<div class="r-res">${res}${hist}${btns?`<span class="r-btns">${btns}</span>`:""}</div>`;})()}</td></tr>`];
   });
   /* 선택 작업 줄. 한 건만 고르고 그 건에 처리결과가 있으면 '처리결과 복사'를 띄운다. 누르면 눌린 채로 두고, 붙일 반품을 체크한 뒤 '완료'. */
