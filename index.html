@@ -11297,6 +11297,15 @@ document.getElementById("vocTemplateBtn").addEventListener("click",async e=>{
 #retApp .v-table td.r-memo:hover{background:var(--v-hover)}
 #retApp .r-memoby{display:inline-block;margin-left:6px;padding:0 6px;border-radius:9px;background:var(--v-side);color:var(--v-mut);font-size:11.5px;line-height:18px;white-space:nowrap;vertical-align:1px}
 #retApp .r-histby{cursor:help}
+#retApp .v-tabs .r-logbtn{margin:0 0 4px auto;flex:none;align-self:center}
+#retApp .r-logm{width:min(1000px,100%)}
+#retApp .r-logbox{max-height:62vh;overflow:auto}
+#retApp .r-logt th{position:sticky;top:0;background:var(--v-bg);text-align:left!important;white-space:nowrap}
+#retApp .r-logt td{vertical-align:top;font-size:12.5px}
+#retApp .r-logt tr[data-act]{cursor:pointer}#retApp .r-logt tr[data-act]:hover td{background:var(--v-hover)}
+#retApp .r-logt td small{display:block;color:var(--v-mut);font-size:11.5px}
+#retApp .r-logt .r-log-t{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--v-mut)}
+#retApp .r-logt i{font-style:normal;color:var(--v-mut)}#retApp .r-log-none{color:var(--v-mut)}
 .r-htip{position:fixed;z-index:10020;width:min(460px,calc(100vw - 16px));max-height:50vh;overflow:auto;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 12px 32px rgba(20,45,70,.2);font-size:12.5px;line-height:1.5;pointer-events:none}
 .r-htip[hidden]{display:none!important}
 .r-htip>b{display:block;margin-bottom:6px;font-size:12px;color:var(--muted)}
@@ -11670,8 +11679,8 @@ function setResult(ids,text,k,seen){
   const ups={},ts=F.api.serverTimestamp(),me=who();
   const d=isDone(text),hk="h"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   for(const id of ids){ups[`items/${id}/result`]=text||null;ups[`items/${id}/doneAt`]=d?ts:null;ups[`items/${id}/doneBy`]=d?me:null;
-    /* 수정기록: 이미 있던 처리결과를 바꾸거나 지울 때만 남긴다(미처리에서 처음 처리하는 건 수정이 아니다). */
-    const old=String(items.get(id)?.result||"");if(old&&old!==(text||""))ups[`items/${id}/hist/${hk}`]={f:old,t:text||"",by:me,at:ts};}
+    /* 변경 로그: 처리결과가 바뀔 때마다 남긴다(붙여넣기 등록은 제외). 고객명 옆 '수정' 칩은 이미 있던 값을 바꾼 기록(f)만 센다. */
+    const old=String(items.get(id)?.result||"");if(old!==(text||""))ups[`items/${id}/hist/${hk}`]={f:old,t:text||"",by:me,at:ts};}
   F.api.update(rref(),ups).catch(saveFail);noteAct(ids,text||"미처리로 되돌림");
 }
 /* 사방넷 반품처리 표시. 끄면 처리자·일시도 지운다. */
@@ -11689,7 +11698,9 @@ function editMemo(g){
     if(t==null)return;t=t.trim();if(t===cur)return;
     const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
     const ups={},ts=F.api.serverTimestamp(),me=who(),ids=g.lines.map(l=>l.id);
-    for(const id of ids){ups[`items/${id}/memo`]=t||null;ups[`items/${id}/memoAt`]=ts;ups[`items/${id}/memoBy`]=me;}
+    const hk="h"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    for(const id of ids){ups[`items/${id}/memo`]=t||null;ups[`items/${id}/memoAt`]=ts;ups[`items/${id}/memoBy`]=me;
+      ups[`items/${id}/hist/${hk}`]={k:"memo",f:String(items.get(id)?.memo||"").trim(),t,by:me,at:ts};}
     F.api.update(rref(),ups).catch(saveFail);noteAct(ids,"반품메모 수정");
   });
 }
@@ -11808,6 +11819,26 @@ function askCost(g,seen){uiPrompt(`${COST_TEXT} 완료\n비용이 얼마인가�
   if(t==null)return;const n=Number(t.replace(/[,\s원]/g,""));
   if(!Number.isInteger(n)||n<1){toast("1 이상의 금액을 숫자로 입력해주세요.");return;}
   setResult(g.lines.map(l=>l.id),`${COST_TEXT} 완료 (${n.toLocaleString("ko-KR")}원)`,g.key,seen);});}
+/* 한 상자(묶음)의 변경 기록. 같은 변경은 줄마다 같은 키로 들어가므로 키로 한 번만 센다. 최신 순. */
+function histOf(g){const m=new Map();for(const l of g.lines)for(const [k,h] of Object.entries(l.hist||{}))if(h&&!m.has(k))m.set(k,h);return [...m.values()].sort((a,b)=>(b.at||0)-(a.at||0));}
+const editsOf=g=>histOf(g).filter(h=>h.k==="memo"||h.f);
+/* 수정기록 창: 처리결과·반품메모 변경 로그 전체(붙여넣기 등록 제외). 줄을 누르면 그 반품을 검색한다. */
+const LOG_MAX=500;
+function openLog(){
+  closeLog();const all=[];
+  for(const g of G.values()){for(const h of histOf(g))all.push([h,g]);
+    /* 이 기능 전(2026-11-19)에 고친 반품메모는 이전 값이 없다. 마지막 수정만 보여 준다. */
+    const ml=g.lines.find(l=>l.memoAt);if(ml&&!histOf(g).some(h=>h.k==="memo"))all.push([{k:"memo",f:null,t:String(ml.memo||""),by:ml.memoBy,at:ml.memoAt},g]);}
+  all.sort((a,b)=>(b[0].at||0)-(a[0].at||0));
+  const w=document.createElement("div");w.className="v-modal-wrap";w.id="rLog";
+  const val=(h,v,end)=>v==null?'<span class="r-log-none">이전 기록 없음</span>':v?esc(v):`<span class="r-log-none">${h.k==="memo"?(end?"(지움)":"(없음)"):"미처리"}</span>`;
+  w.innerHTML=`<div class="v-modal r-modal r-logm" role="dialog" aria-modal="true" aria-label="수정기록"><h2>수정기록</h2>
+    <p class="v-save">처리결과·반품메모가 바뀐 기록입니다(붙여넣기 등록 제외). 최근 ${Math.min(all.length,LOG_MAX).toLocaleString()}건${all.length>LOG_MAX?` / 전체 ${all.length.toLocaleString()}건`:""} · 줄을 누르면 그 반품을 찾아 보여 줍니다.</p>
+    ${all.length?`<div class="v-errs r-logbox"><table class="v-simple r-logt"><thead><tr><th>시간</th><th>수정자</th><th>반품</th><th>항목</th><th>변경 내용</th></tr></thead><tbody>${all.slice(0,LOG_MAX).map(([h,g])=>`<tr data-act="log-go" data-v="${esc(g.key)}"><td class="r-log-t">${esc(fmtTs(h.at))}</td><td>${esc(h.by||"")}</td><td><b>${esc(uniq(g.lines.map(l=>l.customer)).join(", "))}</b><small>반품일 ${esc(fmtDate(g.date))} · ${esc(g.no)}번 · 송장 ${esc(g.lines[0].retTrack||"")}</small></td><td>${h.k==="memo"?"반품메모":"처리결과"}</td><td>${val(h,h.f)} <i>→</i> ${val(h,h.t,1)}</td></tr>`).join("")}</tbody></table></div>`:'<div class="v-blank"><b>아직 수정기록이 없습니다</b>처리결과나 반품메모를 바꾸면 여기에 남습니다.</div>'}
+    <div class="r-foot"><button type="button" class="v-btn" data-act="log-close">닫기</button></div></div>`;
+  root.appendChild(w);w.querySelector("[data-act=log-close]").focus();
+}
+function closeLog(){document.getElementById("rLog")?.remove();}
 /* 수정기록 툴팁: '이름 수정(시간)' 칩에 마우스를 올리면 칩 아래에 기록 목록을 띄운다. */
 const hTip=document.createElement("div");hTip.className="r-htip";hTip.setAttribute("role","tooltip");hTip.hidden=true;document.body.appendChild(hTip);
 document.addEventListener("mouseover",e=>{const c=e.target.closest&&e.target.closest(".r-histby");
@@ -11963,7 +11994,7 @@ function body(full){
   /* 탭 건수는 한 번 돌며 같이 센다(2만 건을 다섯 번 거르지 않게) */
   let nDone=0,nOut=0,nVoc=0,sbTodo=0;for(const g of base){if(g.done)nDone++;if(g.out)nOut++;if(g.voc.length)nVoc++;if(g.needSb)sbTodo++;}
   const tabs=[["todo","미처리",base.length-nDone],["done","처리완료",nDone],["out","반출",nOut],["voc","VOC",nVoc],["all","전체",base.length]];
-  setH(document.getElementById("rTabs"),`<div class="v-tabs" role="tablist">${tabs.map(t=>`<button type="button" class="v-tab${S.tab===t[0]?" on":""}" role="tab" aria-selected="${S.tab===t[0]}" data-act="tab" data-v="${t[0]}">${t[1]}<small>${t[2]}</small>${t[0]==="done"&&sbTodo?`<span class="v-pill t-red r-sbn" title="사방넷 반품처리 안 한 건 ${sbTodo}건">사방넷 ${sbTodo}</span>`:""}</button>`).join("")}</div>`);
+  setH(document.getElementById("rTabs"),`<div class="v-tabs" role="tablist">${tabs.map(t=>`<button type="button" class="v-tab${S.tab===t[0]?" on":""}" role="tab" aria-selected="${S.tab===t[0]}" data-act="tab" data-v="${t[0]}">${t[1]}<small>${t[2]}</small>${t[0]==="done"&&sbTodo?`<span class="v-pill t-red r-sbn" title="사방넷 반품처리 안 한 건 ${sbTodo}건">사방넷 ${sbTodo}</span>`:""}</button>`).join("")}<button type="button" class="v-btn r-logbtn" data-act="log">수정기록</button></div>`);
   if(!shown.length){
     b._head=null;
     setH(b,!items.size?`<div class="v-blank"><b>아직 등록된 반품이 없습니다</b>엑셀에서 반품 내역 행을 복사한 뒤 이 화면에서 Ctrl+V 하세요.<br><button type="button" class="v-btn primary" data-act="paste">${ic("up")}붙여넣기 등록</button></div>`
@@ -11973,6 +12004,8 @@ function body(full){
   const many=(g,f)=>uniq(g.lines.map(l=>l[f]));
   const cp=v=>`<button type="button" class="r-copy" data-act="copy" data-v="${esc(v)}" title="눌러서 복사">${esc(v)}</button>`;
   const track=(g,v)=>{const u=trackUrl(g.courier,v);return u?`<button type="button" class="r-copy" data-act="copy" data-v="${esc(v)}" data-url="${esc(u)}" title="한 번 누르면 복사, 두 번 누르면 ${esc(g.courier)} 배송조회">${esc(v)}</button>`:cp(v);};
+  /* 수정 칩: 이미 있던 처리결과·반품메모를 바꾼 기록이 있으면 고객명 옆에 '이름 수정(시간)', 마우스를 올리면 기록 툴팁(.r-htip). */
+  const histChip=g=>{const hs=editsOf(g);return hs.length?`<span class="r-memoby r-histby" title="" data-hist="${esc(JSON.stringify(hs.slice(0,20).map(h=>[fmtTs(h.at),h.by||"",(h.k==="memo"?"반품메모: ":"")+(h.f||"(없음)"),h.t||(h.k==="memo"?"(지움)":"미처리")])))}">${esc(hs[0].by||"")} 수정(${fmtTs(hs[0].at).slice(5)})</span>`:"";};
   const by=(name,ts)=>name||ts?esc([name,fmtTs(ts)].filter(Boolean).join(" · ")):"";
   const rows=shown.slice(0,S.limit).map(g=>{
     const k=esc(g.key),memo=many(g,"memo").join(", ");
@@ -11981,7 +12014,7 @@ function body(full){
     <td class="sticky c1 v-pick"><input type="checkbox" data-sel="${k}" aria-label="${esc(fmtDate(g.date)+" "+g.no+"번")} 선택"${S.sel.has(g.key)?" checked":""}></td>
     <td class="r-fit"><span title="${fmtDate(g.date)}${g.done?"":` · 반품일부터 ${g.age}일 지남`}"${!g.done&&g.age>AGED?' class="r-late"':""}>${fmtDate(g.date).slice(2)}</span></td>
     <td class="r-sel" title="${esc(g.seller)}">${g.seller?(([m,...s])=>`<b>${esc(m)}</b>${s.length?`<small>${esc(s.join(" "))}</small>`:""}`)(g.seller.split("_")):""}</td>
-    <td class="r-fit r-cust" title="${esc(many(g,"customer").join(", "))}">${esc(many(g,"customer").join(", "))}${voc?`<div class="r-tags">${voc}</div>`:""}</td>
+    <td class="r-fit r-cust" title="${esc(many(g,"customer").join(", "))}">${esc(many(g,"customer").join(", "))}${histChip(g)}${voc?`<div class="r-tags">${voc}</div>`:""}</td>
     <td class="r-fit r-prod">${g.lines.map(l=>`<div title="${esc(l.product)}">${esc(l.product)}</div>`).join("")}</td>
     <td class="r-fit r-qty">${g.lines.map(l=>`<div>${l.qty||""}</div>`).join("")}</td>
     <td class="r-memo${g.memo.length?" on":""}" data-act="memo" data-v="${k}" title="눌러서 반품메모 수정">${esc(memo)}${(ml=>ml?`<span class="r-memoby" title="${esc(by(ml.memoBy,ml.memoAt))} 수정">수정 · ${esc(ml.memoBy||"")}</span>`:"")(g.lines.find(l=>l.memoAt))}</td>
@@ -11995,10 +12028,7 @@ function body(full){
       const out=`<button type="button" class="r-done r-out${g.out?" on":""}" data-act="out" data-v="${k}" title="${g.out?`${g.out}개 반출 · ${esc(by(g.outL.outBy,g.outL.outAt))} · 누르면 표시를 지웁니다`:"반출한 개수 표시"}">${g.out?`${g.out}개 반출`:"반출"}</button>`;
       const btns=g.done?(g.home?"":g.sb?`<button type="button" class="r-sbok" data-act="sb-undo" data-v="${k}" title="사방넷 반품처리 ${esc(by(g.lines[0].sabangBy,g.lines[0].sabangAt))} · 누르면 되돌립니다">사방넷 완료</button>`:`<button type="button" class="r-done" data-act="sb" data-v="${k}" title="사방넷 반품처리 완료로 표시">사방넷 처리</button>`)+out
         :`<button type="button" class="r-done" data-act="done" data-v="${k}" title="${DONE_TEXT}으로 처리">환불승인</button>${out}<select class="r-pick" data-pick="${k}" aria-label="다른 처리결과 고르기" title="다른 처리결과"><option value="">⋯</option><option value="__done" class="r-opt-done">처리완료</option>${picks.map(t=>`<option>${esc(t)}</option>`).join("")}<option value="__edit">직접 입력…</option><option value="__add">목록에 추가…</option>${picks.length?'<option value="__del">목록에서 빼기…</option>':""}</select>`;
-      /* 처리결과 수정기록: '이름 수정(시간)' 칩, 마우스를 올리면 기록 툴팁(.r-htip)이 뜬다. */
-      const hs=Object.values(g.lines.reduce((a,l)=>l.hist&&Object.keys(l.hist).length>Object.keys(a).length?l.hist:a,{})).sort((a,b)=>(b.at||0)-(a.at||0));
-      const hist=hs.length?`<span class="r-memoby r-histby" data-hist="${esc(JSON.stringify(hs.slice(0,20).map(h=>[fmtTs(h.at),h.by||"",h.f||"미처리",h.t||"미처리"])))}">${esc(hs[0].by||"")} 수정(${fmtTs(hs[0].at).slice(5)})</span>`:"";
-      return `<div class="r-res">${res}${hist}${btns?`<span class="r-btns">${btns}</span>`:""}</div>`;})()}</td></tr>`];
+      return `<div class="r-res">${res}${btns?`<span class="r-btns">${btns}</span>`:""}</div>`;})()}</td></tr>`];
   });
   /* 선택 작업 줄. 한 건만 고르고 그 건에 처리결과가 있으면 '처리결과 복사'를 띄운다. 누르면 눌린 채로 두고, 붙일 반품을 체크한 뒤 '완료'. */
   const one=S.sel.size===1&&G.get([...S.sel][0]),canCopy=one&&one.lines.some(l=>l.result);
@@ -12119,6 +12149,7 @@ function build(){
   document.querySelector(".side")?.addEventListener("click",e=>{if(root.classList.contains("on")&&e.target.closest(".side-link:not(#openReturnBtn),.cat"))close();},true);
   root.addEventListener("click",e=>{
     if(e.target.id==="rPaste"){closePaste();return;}
+    if(e.target.id==="rLog"){closeLog();return;}
     const el=e.target.closest("[data-act]");
     if(!el)return;
     /* 두 번 누르기의 두 번째 클릭은 처리 버튼에서 무시한다(처리 직후 같은 자리에 생긴 다른 버튼이 눌리지 않게). */
@@ -12130,6 +12161,9 @@ function build(){
       case "xlsx":exportXlsx();break;
       case "paste":openPaste("");break;
       case "paste-close":closePaste();break;
+      case "log":openLog();break;
+      case "log-close":closeLog();break;
+      case "log-go":{const x=G.get(v);closeLog();if(!x)break;if(window.TK)TK.clearFilters("returns");Object.assign(S,{tab:"all",q:x.lines[0].retTrack||x.lines[0].customer||"",qf:"",seller:"",courier:"",result:"",from:"",to:"",limit:200});shell();refresh();}break;
       case "paste-save":savePlan();break;
       case "tab":S.tab=v;S.limit=200;S.sel.clear();refresh();break;
       case "more":S.limit+=200;body();break;
@@ -12190,6 +12224,7 @@ function build(){
     if(e.key!=="Escape"||document.querySelector(".ui-dlg-wrap"))return;
     const a=document.activeElement;
     if(document.getElementById("rPaste")){e.preventDefault();closePaste();}
+    else if(document.getElementById("rLog")){e.preventDefault();closeLog();}
     else if(S.copy){e.preventDefault();S.copy=null;body();}
     else if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))a.blur();
   },true);
@@ -12206,7 +12241,7 @@ function open(){
 }
 function close(){
   if(!root||!root.classList.contains("on"))return;
-  closePaste();S.copy=null;root.classList.remove("on");leaveMe();
+  closePaste();closeLog();S.copy=null;root.classList.remove("on");leaveMe();
   if(typeof syncSideMenu==="function")syncSideMenu();
 }
 document.getElementById("openReturnBtn").addEventListener("click",open);
