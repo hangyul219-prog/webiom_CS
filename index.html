@@ -11305,7 +11305,7 @@ document.getElementById("vocTemplateBtn").addEventListener("click",async e=>{
 #retApp .r-logt tr[data-act]{cursor:pointer}#retApp .r-logt tr[data-act]:hover td{background:var(--v-hover)}
 #retApp .r-logt td small{display:block;color:var(--v-mut);font-size:11.5px}
 #retApp .r-logt .r-log-t{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--v-mut)}
-#retApp .r-logt i{font-style:normal;color:var(--v-mut)}#retApp .r-log-none{color:var(--v-mut)}#retApp .r-log-trk{margin-left:4px;color:var(--v-mut);font-variant-numeric:tabular-nums;white-space:nowrap}
+#retApp .r-logt i{font-style:normal;color:var(--v-mut)}#retApp .r-log-none{color:var(--v-mut)}
 .r-htip{position:fixed;z-index:10020;width:min(460px,calc(100vw - 16px));max-height:50vh;overflow:auto;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 12px 32px rgba(20,45,70,.2);font-size:12.5px;line-height:1.5;pointer-events:none}
 .r-htip[hidden]{display:none!important}
 .r-htip>b{display:block;margin-bottom:6px;font-size:12px;color:var(--muted)}
@@ -11834,7 +11834,7 @@ function openLog(){
   const val=(h,v,end)=>v==null?'<span class="r-log-none">이전 기록 없음</span>':v?esc(v):`<span class="r-log-none">${h.k==="memo"?(end?"(지움)":"(없음)"):"미처리"}</span>`;
   w.innerHTML=`<div class="v-modal r-modal r-logm" role="dialog" aria-modal="true" aria-label="수정기록"><h2>수정기록</h2>
     <p class="v-save">처리결과·반품메모가 바뀐 기록입니다(붙여넣기 등록 제외). 최근 ${Math.min(all.length,LOG_MAX).toLocaleString()}건${all.length>LOG_MAX?` / 전체 ${all.length.toLocaleString()}건`:""} · 줄을 누르면 그 반품을 찾아 보여 줍니다.</p>
-    ${all.length?`<div class="v-errs r-logbox"><table class="v-simple r-logt"><thead><tr><th>수정일시</th><th>수정자</th><th>반품</th><th>항목</th><th>변경 내용</th></tr></thead><tbody>${all.slice(0,LOG_MAX).map(([h,g])=>`<tr data-act="log-go" data-v="${esc(g.key)}"><td class="r-log-t">${esc(fmtTs(h.at))}</td><td>${esc(h.by||"")}</td><td><b>${esc(uniq(g.lines.map(l=>l.customer)).join(", "))}</b> <span class="r-log-trk">${esc(uniq(g.lines.map(l=>l.retTrack)).join(", "))}</span></td><td>${h.k==="memo"?"반품메모":"처리결과"}</td><td>${val(h,h.f)} <i>→</i> ${val(h,h.t,1)}</td></tr>`).join("")}</tbody></table></div>`:'<div class="v-blank"><b>아직 수정기록이 없습니다</b>처리결과나 반품메모를 바꾸면 여기에 남습니다.</div>'}
+    ${all.length?`<div class="v-errs r-logbox"><table class="v-simple r-logt"><thead><tr><th>수정일시</th><th>수정자</th><th>반품</th><th>항목</th><th>변경 내용</th></tr></thead><tbody>${all.slice(0,LOG_MAX).map(([h,g])=>`<tr data-act="log-go" data-v="${esc(g.key)}"><td class="r-log-t">${esc(fmtTs(h.at))}</td><td>${esc(h.by||"")}</td><td><b>${esc(uniq(g.lines.map(l=>l.customer)).join(", "))}</b></td><td>${h.k==="memo"?"반품메모":"처리결과"}</td><td>${val(h,h.f)} <i>→</i> ${val(h,h.t,1)}</td></tr>`).join("")}</tbody></table></div>`:'<div class="v-blank"><b>아직 수정기록이 없습니다</b>처리결과나 반품메모를 바꾸면 여기에 남습니다.</div>'}
     <div class="r-foot"><button type="button" class="v-btn" data-act="log-close">닫기</button></div></div>`;
   root.appendChild(w);w.querySelector("[data-act=log-close]").focus();
 }
