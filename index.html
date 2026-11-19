@@ -11666,22 +11666,29 @@ function undo(rec){
   const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
   if(!rec){rec=UNDO.pop();if(!rec){toast("되돌릴 작업이 없습니다.");return;}}else{const i=UNDO.indexOf(rec);if(i<0)return;UNDO.splice(i,1);}
   const byId=new Map();for(const c of rec.ch){const id=c[0].split("/")[1];if(!byId.has(id))byId.set(id,[]);byId.get(id).push(c);}
-  const ups={},ts=F.api.serverTimestamp(),me=who(),hk="h"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-  let ok=0,skip=0;
-  for(const [id,cs] of byId){
-    if(!cs.every(([path,,after])=>same(after,rawAt(path)))){skip++;continue;}
-    ok++;
-    for(const [path,before] of cs){
-      if(path.split("/").length===2&&before&&RAW.get(id)?.hist)before.hist={...(before.hist||{}),...RAW.get(id).hist};   /* 되살릴 때 그 사이 생긴 로그도 지키기 */
-      ups[path]=before;
-      const f=path.split("/")[2];
-      if(f==="result"||f==="memo"){const cur=String(rawAt(path)||""),b=String(before||"");
-        if(cur!==b)ups[`items/${id}/hist/${hk}`]={...(f==="memo"?{k:"memo"}:{}),f:cur,t:b,by:me,at:ts,u:1};}
+  const me=who(),hk="h"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  /* 줄마다 서버 트랜잭션으로: 서버의 지금 값이 내가 쓴 값 그대로일 때만 되돌린다.
+     두 사람이 거의 동시에 같은 줄을 고쳐 내 화면에 아직 안 온 변경이 있어도 덮어쓰지 않는다. */
+  const one=(id,cs)=>F.api.runTransaction(rref("items/"+id),cur=>{
+    const at=f=>{const v=f?(cur||{})[f]:cur;return v===undefined?null:v;};
+    if(!cs.every(([path,,after])=>same(after,at(path.split("/")[2]))))return;   /* 그만둔다 */
+    let next=cur?JSON.parse(JSON.stringify(cur)):null;
+    for(const [path,before] of cs){const f=path.split("/")[2];
+      if(!f){next=before?{...JSON.parse(JSON.stringify(before)),hist:{...(before.hist||{}),...((cur&&cur.hist)||{})}}:null;continue;}   /* 통째 지움·되살림 */
+      if(!next)return;
+      const was=at(f);if(before==null)delete next[f];else next[f]=before;
+      if((f==="result"||f==="memo")&&String(was||"")!==String(before||""))
+        next.hist={...(next.hist||{}),[hk]:{...(f==="memo"?{k:"memo"}:{}),f:String(was||""),t:String(before||""),by:me,at:srvNow(),u:1}};
     }
-  }
-  const msg=skip?(ok?` 다른 사람이 그 뒤에 바꾼 ${skip}줄은 그대로 두었습니다.`:""):"";
-  if(!ok){toast(`'${rec.label}'은(는) 그 뒤에 다른 사람이 바꿔서 되돌리지 않았습니다.`);return;}
-  F.api.update(rref(),ups).then(()=>{toast(`되돌렸습니다: ${rec.label}.${msg}`);if(typeof hideUndoToast==="function")hideUndoToast();},saveFail);
+    if(next&&next.hist&&!Object.keys(next.hist).length)delete next.hist;
+    return next;
+  },{applyLocally:false}).then(r=>!!(r&&r.committed),()=>false);
+  Promise.all([...byId].map(([id,cs])=>one(id,cs))).then(rs=>{
+    const ok=rs.filter(Boolean).length,skip=rs.length-ok;
+    if(!ok){toast(`'${rec.label}'은(는) 그 뒤에 다른 사람이 바꿔서 되돌리지 않았습니다.`);return;}
+    toast(`되돌렸습니다: ${rec.label}.`+(skip?` 다른 사람이 그 뒤에 바꾼 ${skip}줄은 그대로 두었습니다.`:""));
+    if(typeof hideUndoToast==="function")hideUndoToast();
+  });
   noteAct([...byId.keys()],"되돌리기");
 }
 /* 고른 상자들을 지운다. 휴지통은 없고, 10초 동안 아래 알림의 '되돌리기'로 되살릴 수 있다. */
