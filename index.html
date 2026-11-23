@@ -2855,6 +2855,7 @@ textarea.v-in{display:block;resize:none;overflow:hidden;min-height:82px;backgrou
       <button class="side-link" id="openPhoneBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg><span>전화주문 가격표</span></button>
     <button class="side-link" id="openVocBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/><path d="M12 8v4M12 15.5v.5"/></svg>VOC 관리대장</button>
     <button class="side-link" id="openReturnBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>반품 관리</button>
+    <button class="side-link" id="openCrmBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4Z"/><path d="M8 9h8M8 12.5h5"/></svg>CRM 발송</button>
     </nav>
     <div class="side-label" id="sideLabel">FAQ 카테고리</div>
     <nav class="cats" id="cats"></nav>
@@ -3517,8 +3518,9 @@ function renderCats(){
 /* 왼쪽 메뉴 강조: 제품정보·가격표 화면이 열려 있으면 그 메뉴를, 아니면 FAQ/카테고리를 표시 */
 function syncSideMenu(){
   const cat = document.getElementById("catModal")?.classList.contains("on"), po = document.getElementById("poModal")?.classList.contains("on"), ret = document.getElementById("retApp")?.classList.contains("on");
-  const home = document.getElementById("homeApp")?.classList.contains("on"), voc = document.getElementById("vocApp")?.classList.contains("on");
-  const faq = !cat && !po && !ret && !home && !voc;
+  const home = document.getElementById("homeApp")?.classList.contains("on"), voc = document.getElementById("vocApp")?.classList.contains("on"), crm = document.getElementById("crmApp")?.classList.contains("on");
+  const faq = !cat && !po && !ret && !home && !voc && !crm;
+  document.getElementById("openCrmBtn")?.classList.toggle("on", !!crm);
   document.getElementById("homeNavBtn")?.classList.toggle("on", !!home);
   document.getElementById("openVocBtn")?.classList.toggle("on", !!voc);
   /* FAQ 카테고리 목록은 FAQ 화면에서만 보인다. */
@@ -4599,7 +4601,7 @@ function exportFile(){
   cleanExportClone(clone);
   /* VOC 화면에 그려진 자료가 프로그램 파일에 섞이지 않게 뺀다. */
   const vocClone=clone.querySelector("#vocApp"); if(vocClone) vocClone.remove();
-  clone.querySelectorAll("#retApp,#retStyle").forEach(n => n.remove());
+  clone.querySelectorAll("#retApp,#retStyle,#crmApp,#crmStyle").forEach(n => n.remove());
   const bodyClone=clone.querySelector("body"); if(bodyClone) bodyClone.classList.remove("voc-open");
   const html = "<!doctype html>\n" + clone.outerHTML;
   const blob = new Blob([html], {type:"text/html"});
@@ -12328,6 +12330,316 @@ window.returnsSearch=(q,n=5)=>{
 /* 홈 화면 카드에서 탭·처리결과 필터를 정해 반품 화면을 연다. */
 window.returnsOpen=(tab,result,from,q,qf)=>{Object.assign(S,{tab:tab||"todo",result:result||"",q:q||"",qf:qf||"",seller:"",courier:"",from:from||"",to:"",limit:200});S.sel.clear();if(main)main.innerHTML="";open();};
 if(fb())start();
+})();
+</script>
+<script id="crmScript">
+/* ===== CRM 발송 기록: 문자·알림톡 발송 한 번 = 한 건. 템플릿, 발송 대상(엑셀에서 복사한 raw), 구매 내역(raw)을 붙여넣으면
+   발송 건수·구매 건수·매출·전환율·비용·ROAS를 자동으로 계산한다. 데이터는 FIREBASE_ROOT/crm/campaigns · crm/templates.
+   화면은 VOC 관리대장의 모양(v-*)을 그대로 쓴다(반품 관리와는 별개 메뉴·별개 데이터). */
+(function(){
+"use strict";
+{const old=document.getElementById("crmStyle");if(old)old.remove();
+ let css="";
+ const walk=(rules,wrap)=>{for(const r of rules){
+   if(r.media&&r.cssRules)walk(r.cssRules,t=>wrap(`@media ${r.media.mediaText}{${t}}`));
+   else if(r.selectorText&&r.selectorText.includes("#vocApp"))css+=wrap(r.cssText.replaceAll("#vocApp","#crmApp"))+"\n";}};
+ for(const sh of document.styleSheets){try{walk(sh.cssRules,t=>t);}catch(e){}}
+ const st=document.createElement("style");st.id="crmStyle";
+ st.textContent=css+`
+.content>#crmApp{position:static;inset:auto;z-index:auto;grid-template-columns:minmax(0,1fr)}
+.content>#crmApp .v-main{overflow:visible}
+/* VOC 화면용 복사 규칙이 제목을 숨기므로 CRM 화면에서는 다시 보이게 한다(반품 관리와 같은 모양). */
+.content>#crmApp:not(#retApp) .v-page:not(.v-detail)>.v-title-row>.v-title{display:block}
+.content:has(>#crmApp.on)>.topbar,.content:has(>#crmApp.on)>main{display:none}
+/* 본문(.content z-index 7)이 왼쪽 메뉴(10) 아래라 팝업이 메뉴에 가려진다. 팝업이 떠 있는 동안만 본문을 위로 올린다(반품 관리 팝업도 같이). */
+.content:has(>#crmApp .v-modal-wrap),.content:has(>#retApp .v-modal-wrap){z-index:20}
+#crmApp .v-table{min-width:1100px}
+#crmApp .v-table td.c-num,#crmApp .v-table th.c-num{text-align:right;font-variant-numeric:tabular-nums}
+#crmApp .v-table td.c-name{max-width:260px}
+#crmApp .v-table td.c-name small{display:block;color:var(--v-mut);font-size:11.5px;overflow:hidden;text-overflow:ellipsis}
+#crmApp .c-modal{width:min(980px,100%)}
+#crmApp .c-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 12px;margin:12px 0}
+#crmApp .c-grid label,#crmApp .c-col label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--v-mut)}
+#crmApp .c-grid .c-wide{grid-column:span 2}
+#crmApp .c-modal input,#crmApp .c-modal select,#crmApp .c-modal textarea{height:32px;padding:0 9px;border:1px solid var(--v-line);border-radius:6px;background:var(--v-bg);color:var(--v-ink);font-size:13px;outline:0}
+#crmApp .c-modal textarea{height:auto;min-height:96px;padding:8px 10px;resize:vertical;line-height:1.5}
+#crmApp .c-modal textarea.c-raw{white-space:pre;font-size:12px;background:var(--v-side)}
+#crmApp .c-modal input:focus,#crmApp .c-modal select:focus,#crmApp .c-modal textarea:focus{border-color:var(--v-acc)}
+#crmApp .c-two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0}
+#crmApp .c-col{display:flex;flex-direction:column;gap:6px;min-width:0}
+#crmApp .c-hint{font-size:12px;color:var(--v-mut);line-height:1.5}
+#crmApp .c-hint b{color:var(--v-ink);font-weight:600}
+#crmApp .c-calc{display:flex;flex-wrap:wrap;gap:6px 18px;padding:10px 12px;border-radius:8px;background:var(--v-side);font-size:13px;color:var(--v-ink2)}
+#crmApp .c-calc b{color:var(--v-ink);font-variant-numeric:tabular-nums}
+#crmApp .c-foot{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:12px}
+#crmApp .c-foot .danger{margin-right:auto;color:#d33}
+#crmApp .c-tpl-list{max-height:52vh;overflow:auto;border:1px solid var(--v-line);border-radius:8px}
+#crmApp .c-tpl{display:grid;grid-template-columns:180px 90px minmax(0,1fr) auto;gap:10px;align-items:start;padding:9px 11px;border-bottom:1px solid var(--v-line);font-size:13px}
+#crmApp .c-tpl:last-child{border-bottom:0}
+#crmApp .c-tpl p{margin:0;white-space:pre-wrap;color:var(--v-ink2);max-height:5.6em;overflow:hidden}
+@media (max-width:900px){#crmApp .c-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#crmApp .c-two{grid-template-columns:1fr}#crmApp .v-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}`;
+ document.head.appendChild(st);}
+
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad=n=>String(n).padStart(2,"0");
+const todayIso=()=>{const d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());};
+const fmtDate=s=>s?s.replace(/-/g,"."):"";
+const toast=m=>showToast(m);
+const fb=()=>(typeof FBX!=="undefined"&&FBX&&FBX.ready&&FBX.user&&FBX.api&&FBX.db)?FBX:null;
+const cref=p=>FBX.api.ref(FBX.db,FIREBASE_ROOT+"/crm"+(p?"/"+p:""));
+const who=()=>(window.WB_NAMES&&window.WB_NAMES[FBX.loginId])||FBX.loginId||"사용자";
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const won=n=>(Math.round(Number(n)||0)).toLocaleString()+"원";
+const num=n=>(Number(n)||0).toLocaleString();
+const pct=(a,b)=>b?(a/b*100).toFixed(a/b<.1?2:1)+"%":"-";
+const CHANNELS=["알림톡","문자(SMS)","문자(LMS)","문자(MMS)","친구톡","앱푸시","기타"];
+
+/* ---------- 붙여넣은 raw 읽기 ---------- */
+/* 휴대폰 번호(010-1234-5678, 01012345678, 10-1234-5678 등)를 11자리 숫자로 모은다. */
+const PHONE_RE=/(?<![\d-])(?:\+?82[-\s]?)?0?1[016789][-\s.]?\d{3,4}[-\s.]?\d{4}(?![\d-])/g;
+const normPhone=s=>{let d=String(s).replace(/\D/g,"");if(d.startsWith("82"))d=d.slice(2);if(!d.startsWith("0"))d="0"+d;return /^01[016789]\d{7,8}$/.test(d)?d:"";};
+function parseTargets(raw){
+  const lines=String(raw||"").split(/\r?\n/).filter(l=>l.trim());
+  const all=[];for(const l of lines)for(const m of l.match(PHONE_RE)||[]){const p=normPhone(m);if(p)all.push(p);}
+  const set=new Set(all);
+  /* 번호가 하나도 없으면 줄 수를 발송 건수로 본다(이름·회원ID만 붙여넣은 경우) */
+  return {phones:set,count:set.size||lines.length,dup:all.length-set.size,lines:lines.length,byPhone:set.size>0};
+}
+/* 구매 내역: 한 줄 = 주문 한 건. 줄에서 휴대폰 번호와 금액(콤마가 있거나 100원 이상인 마지막 숫자, 번호·날짜 제외)을 찾는다.
+   발송 대상 번호가 있으면 그 번호와 같은 줄만 구매로 센다. 구매 건수 = 산 사람 수(번호 기준). */
+/* shortcut: 금액은 줄의 마지막 금액처럼 보이는 숫자로 읽는다(배송비 칸이 뒤에 있으면 틀릴 수 있음) — 틀리면 매출 직접 입력, 주문 엑셀 양식이 정해지면 열 이름으로 읽게 바꾼다. */
+function lineAmount(l){
+  const t=l.replace(PHONE_RE," ").replace(/\d{4}[-./]\d{1,2}[-./]\d{1,2}/g," ").replace(/\d{1,2}:\d{2}(:\d{2})?/g," ");
+  const ms=[...t.matchAll(/(\d{1,3}(?:,\d{3})+|\d+)(?:\s*원)?/g)].map(m=>({v:Number(m[1].replace(/,/g,"")),c:/,/.test(m[1])||/원/.test(m[0])}));
+  const pick=ms.filter(m=>m.c).pop()||ms.filter(m=>m.v>=100&&m.v<100000000&&String(m.v).length<=8).pop();
+  return pick?pick.v:0;
+}
+function parseBuyers(raw,targets){
+  const lines=String(raw||"").split(/\r?\n/).filter(l=>l.trim());
+  const buyers=new Set();let revenue=0,orders=0,outside=0,noPhone=0;
+  for(const l of lines){
+    const p=(l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"";
+    if(!p){noPhone++;continue;}
+    if(targets&&targets.byPhone&&!targets.phones.has(p)){outside++;continue;}
+    buyers.add(p);orders++;revenue+=lineAmount(l);
+  }
+  return {buyers:buyers.size,orders,revenue,outside,noPhone,lines:lines.length};
+}
+console.assert((()=>{
+  const t=parseTargets("홍길동\t010-1234-5678\n김철수 01011112222\n010-1234-5678\n\n이영희\t10-3333-4444");
+  const b=parseBuyers("2026-11-20\t홍길동\t010-1234-5678\t39,000\n2026-11-21\t홍길동\t01012345678\t12000\n남\t010-9999-8888\t50,000원\n김철수\t01011112222\t2\t78,000",t);
+  return t.count===3&&t.dup===1&&b.buyers===2&&b.orders===3&&b.revenue===129000&&b.outside===1&&parseTargets("a\nb\n c ").count===3&&lineAmount("ORD-1 3개 45,900원")===45900&&lineAmount("2026-11-20 13:05 결제 33000")===33000&&parseTargets("20261118-0000058\n2026111800013").byPhone===false;
+})(),"CRM 붙여넣기 해석 자가 점검 실패");
+
+/* 한 건의 숫자. 직접 입력값이 있으면 그 값을 쓴다. */
+function calc(c){
+  const t=parseTargets(c.targetsRaw);
+  const b=parseBuyers(c.buyersRaw,t);
+  const sent=c.sentManual!=null&&c.sentManual!==""?Number(c.sentManual):t.count;
+  const buyers=c.buyersManual!=null&&c.buyersManual!==""?Number(c.buyersManual):b.buyers;
+  const revenue=c.revenueManual!=null&&c.revenueManual!==""?Number(c.revenueManual):b.revenue;
+  const cost=sent*(Number(c.unitCost)||0);
+  return {t,b,sent,buyers,revenue,cost,conv:pct(buyers,sent),aov:buyers?revenue/buyers:0,roas:cost?Math.round(revenue/cost*100).toLocaleString()+"%":"-"};
+}
+
+/* 목록용 계산은 기록이 바뀔 때만 다시 한다(검색할 때마다 붙여넣은 수천 줄을 다시 읽지 않게). */
+const CALC=new Map(),calcOf=c=>{const h=CALC.get(c.id),sig=c.updatedAt+"|"+(c.targetsRaw||"").length+"|"+(c.buyersRaw||"").length;if(h&&h.sig===sig)return h.k;const k=calc(c);CALC.set(c.id,{sig,k});return k;};
+/* ---------- 상태 ---------- */
+let root,main,camps={},tpls={},unsub=null,loaded=false,err="";
+const S={month:todayIso().slice(0,7),q:""};
+function start(){
+  const F=fb();if(!F||unsub)return;
+  const u1=F.api.onValue(cref("campaigns"),s=>{camps=s.val()||{};loaded=true;err="";draw();},e=>{console.error("crm",e);err="서버 권한을 확인해주세요. Firebase Realtime Database 규칙에서 webiomCs/v1/crm 경로의 읽기·쓰기를 허용해야 합니다.";loaded=true;draw();});
+  const u2=F.api.onValue(cref("templates"),s=>{tpls=s.val()||{};drawTplModal();},e=>console.error("crm tpl",e));
+  unsub=()=>{u1();u2();};
+  F.unsubs.push(()=>{if(unsub)unsub();unsub=null;camps={};tpls={};loaded=false;close();});
+}
+const list=()=>Object.entries(camps).map(([id,c])=>({id,...c})).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||0)-(a.createdAt||0));
+
+/* ---------- 화면 ---------- */
+function build(){
+  root=document.createElement("div");root.id="crmApp";root.tabIndex=-1;root.setAttribute("aria-label","CRM 발송 기록");
+  root.innerHTML=`<div class="v-main" id="cMain"></div>`;
+  (document.querySelector(".content")||document.body).appendChild(root);main=root.querySelector("#cMain");
+  document.querySelector(".side")?.addEventListener("click",e=>{if(root.classList.contains("on")&&e.target.closest(".side-link:not(#openCrmBtn),.cat"))close();},true);
+  root.addEventListener("click",onClick);
+  root.addEventListener("input",onInput);
+  root.addEventListener("change",e=>{const t=e.target;
+    if(t.id==="cMonth"){S.month=t.value;draw();}
+    else if(t.id==="fTpl")useTpl(t.value);});
+  window.addEventListener("keydown",e=>{if(!root.classList.contains("on")||e.key!=="Escape"||document.querySelector(".ui-dlg-wrap"))return;
+    if(document.getElementById("cEdit")){e.preventDefault();closeEdit();}else if(document.getElementById("cTpl")){e.preventDefault();closeTpl();}},true);
+}
+function draw(){
+  if(!root||!root.classList.contains("on"))return;
+  const all=list(),m=S.month,q=S.q.trim().toLowerCase();
+  const shown=all.filter(c=>(!m||String(c.date||"").startsWith(m))&&(!q||[c.name,c.channel,c.templateName,c.memo].some(v=>String(v||"").toLowerCase().includes(q))));
+  const rows=shown.map(c=>({c,k:calcOf(c)}));
+  const sum=rows.reduce((s,{k})=>({sent:s.sent+k.sent,buyers:s.buyers+k.buyers,revenue:s.revenue+k.revenue,cost:s.cost+k.cost}),{sent:0,buyers:0,revenue:0,cost:0});
+  const months=[...new Set(all.map(c=>String(c.date||"").slice(0,7)).filter(Boolean))].sort().reverse();
+  const qEl=root.querySelector("#cSearch"),hadFocus=document.activeElement===qEl,pos=qEl&&qEl.selectionStart;
+  main.innerHTML=`${err?`<div class="v-banner" role="alert">${esc(err)}</div>`:""}<div class="v-page v-wide v-list-page">
+  <div class="v-title-row"><h1 class="v-title">CRM 발송 기록</h1><span class="v-spacer"></span>
+    <select class="v-filter${m?" set":""}" id="cMonth" aria-label="발송 월"><option value="">전체 기간</option>${[...new Set([todayIso().slice(0,7),...months])].sort().reverse().map(x=>`<option value="${x}"${x===m?" selected":""}>${x.replace("-",".")}</option>`).join("")}</select>
+    <label class="v-search"><svg class="vi" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="cSearch" type="search" placeholder="캠페인명·채널·템플릿 검색" value="${esc(S.q)}" aria-label="발송 기록 검색"></label>
+    <button type="button" class="v-btn" data-act="tpl">템플릿 관리</button>
+    <button type="button" class="v-btn primary" data-act="new">새 발송 기록</button></div>
+  <div class="v-kpis">
+    <div class="v-kpi"><span>발송 건수<small>${m?m.replace("-",".")+" · ":""}${rows.length}회 발송</small></span><b>${num(sum.sent)}<small>건</small></b></div>
+    <div class="v-kpi"><span>구매 건수<small>전환율 ${pct(sum.buyers,sum.sent)}</small></span><b>${num(sum.buyers)}<small>건</small></b></div>
+    <div class="v-kpi"><span>매출<small>객단가 ${sum.buyers?won(sum.revenue/sum.buyers):"-"}</small></span><b>${num(sum.revenue)}<small>원</small></b></div>
+    <div class="v-kpi"><span>발송 비용<small>ROAS ${sum.cost?Math.round(sum.revenue/sum.cost*100).toLocaleString()+"%":"-"}</small></span><b>${num(sum.cost)}<small>원</small></b></div></div>
+  ${!loaded?`<div class="v-blank"><b>불러오는 중…</b></div>`:!rows.length?`<div class="v-blank"><b>${all.length?"조건에 맞는 발송 기록이 없습니다":"아직 발송 기록이 없습니다"}</b>${all.length?"기간이나 검색어를 바꿔보세요.":"'새 발송 기록'을 눌러 템플릿·발송 대상·구매 내역을 붙여넣으면 숫자가 자동으로 계산됩니다."}</div>`
+  :`<div class="v-table-wrap"><table class="v-table"><thead><tr><th>발송일</th><th>캠페인</th><th>채널</th><th class="c-num">발송</th><th class="c-num">구매</th><th class="c-num">전환율</th><th class="c-num">매출</th><th class="c-num">객단가</th><th class="c-num">비용</th><th class="c-num">ROAS</th><th>작성</th></tr></thead><tbody>${
+    rows.map(({c,k})=>`<tr data-act="edit" data-v="${esc(c.id)}"><td>${esc(fmtDate(c.date))}</td><td class="c-name" title="${esc(c.name)}">${esc(c.name||"(이름 없음)")}${c.templateName?`<small>${esc(c.templateName)}</small>`:""}</td><td>${esc(c.channel||"")}</td><td class="c-num">${num(k.sent)}</td><td class="c-num">${num(k.buyers)}</td><td class="c-num">${k.conv}</td><td class="c-num">${num(k.revenue)}</td><td class="c-num">${k.buyers?num(Math.round(k.aov)):"-"}</td><td class="c-num">${k.cost?num(k.cost):"-"}</td><td class="c-num">${k.roas}</td><td>${esc(c.updatedBy||c.createdBy||"")}</td></tr>`).join("")
+  }</tbody></table></div>`}</div>`;
+  if(hadFocus){const n=root.querySelector("#cSearch");n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}
+}
+function onInput(e){
+  if(e.target.id==="cSearch"){S.q=e.target.value;draw();return;}
+  if(e.target.closest("#cEdit"))recalc();
+}
+function onClick(e){
+  /* 발송 기록 창은 바깥을 눌러도 닫지 않는다(붙여넣은 내용이 날아가지 않게). */
+  if(e.target.id==="cTpl"){closeTpl();return;}
+  const el=e.target.closest("[data-act]");if(!el)return;
+  switch(el.dataset.act){
+    case "new":openEdit(null);break;
+    case "edit":openEdit(el.dataset.v);break;
+    case "e-close":closeEdit();break;
+    case "e-save":saveEdit();break;
+    case "e-del":delEdit();break;
+    case "e-savetpl":saveAsTpl();break;
+    case "tpl":openTpl();break;
+    case "t-close":closeTpl();break;
+    case "t-new":editTpl(null);break;
+    case "t-edit":editTpl(el.dataset.v);break;
+    case "t-del":delTpl(el.dataset.v);break;
+  }
+}
+
+/* ---------- 발송 기록 입력 창 ---------- */
+let editId=null;
+const val=id=>root.querySelector("#"+id)?.value??"";
+function openEdit(id){
+  closeEdit();editId=id;
+  const c=id?camps[id]||{}:{date:todayIso(),channel:"알림톡"};
+  const tplOpts=Object.entries(tpls).sort((a,b)=>String(a[1].name).localeCompare(String(b[1].name),"ko"));
+  const w=document.createElement("div");w.className="v-modal-wrap";w.id="cEdit";
+  w.innerHTML=`<div class="v-modal c-modal" role="dialog" aria-modal="true" aria-label="발송 기록"><h2>${id?"발송 기록 수정":"새 발송 기록"}</h2>
+  <div class="c-grid">
+    <label>발송일<input id="fDate" type="date" value="${esc(c.date||"")}"></label>
+    <label class="c-wide">캠페인명<input id="fName" type="text" maxlength="80" placeholder="예: 11월 맥스 재구매 알림톡" value="${esc(c.name||"")}"></label>
+    <label>채널<select id="fChannel">${CHANNELS.map(x=>`<option${x===c.channel?" selected":""}>${x}</option>`).join("")}</select></label>
+    <label class="c-wide">템플릿<select id="fTpl"><option value="">템플릿 불러오기…</option>${tplOpts.map(([k,t])=>`<option value="${esc(k)}">${esc(t.name)}</option>`).join("")}</select></label>
+    <label>템플릿 이름<input id="fTplName" type="text" maxlength="60" value="${esc(c.templateName||"")}"></label>
+    <label>건당 비용(원)<input id="fUnit" type="number" min="0" step="0.1" value="${esc(c.unitCost??"")}" placeholder="예: 8"></label></div>
+  <div class="c-col"><label>발송 문구<textarea id="fText" rows="5" placeholder="고객에게 보낸 문구">${esc(c.template||"")}</textarea></label>
+    <div class="c-foot" style="margin-top:0;justify-content:flex-start"><button type="button" class="v-btn" data-act="e-savetpl">이 문구를 템플릿으로 저장</button></div></div>
+  <div class="c-two">
+    <div class="c-col"><label>발송 대상 (엑셀에서 복사해 붙여넣기)<textarea id="fTargets" class="c-raw" rows="7" placeholder="이름&#9;휴대폰번호 …">${esc(c.targetsRaw||"")}</textarea></label><div class="c-hint" id="hTargets"></div></div>
+    <div class="c-col"><label>구매 내역 (주문 엑셀에서 복사해 붙여넣기)<textarea id="fBuyers" class="c-raw" rows="7" placeholder="주문일&#9;이름&#9;휴대폰번호&#9;결제금액 …">${esc(c.buyersRaw||"")}</textarea></label><div class="c-hint" id="hBuyers"></div></div></div>
+  <div class="c-grid">
+    <label>발송 건수 직접 입력<input id="fSentM" type="number" min="0" value="${esc(c.sentManual??"")}" placeholder="비우면 자동"></label>
+    <label>구매 건수 직접 입력<input id="fBuyM" type="number" min="0" value="${esc(c.buyersManual??"")}" placeholder="비우면 자동"></label>
+    <label>매출 직접 입력(원)<input id="fRevM" type="number" min="0" value="${esc(c.revenueManual??"")}" placeholder="비우면 자동"></label>
+    <label>메모<input id="fMemo" type="text" maxlength="200" value="${esc(c.memo||"")}"></label></div>
+  <div class="c-calc" id="fCalc"></div>
+  <div class="c-foot">${id?`<button type="button" class="v-btn danger" data-act="e-del">삭제</button>`:""}<span class="v-save">${id&&c.updatedBy?`마지막 수정 ${esc(c.updatedBy)}`:""}</span><button type="button" class="v-btn" data-act="e-close">취소</button><button type="button" class="v-btn primary" data-act="e-save">저장</button></div></div>`;
+  root.appendChild(w);recalc();w.querySelector("#fName").focus();
+}
+function closeEdit(){document.getElementById("cEdit")?.remove();editId=null;}
+function formData(){
+  const n=v=>v===""?null:Number(v);
+  return {date:val("fDate"),name:val("fName").trim(),channel:val("fChannel"),templateName:val("fTplName").trim(),template:val("fText"),unitCost:n(val("fUnit")),
+    targetsRaw:val("fTargets"),buyersRaw:val("fBuyers"),sentManual:n(val("fSentM")),buyersManual:n(val("fBuyM")),revenueManual:n(val("fRevM")),memo:val("fMemo").trim()};
+}
+function recalc(){
+  if(!document.getElementById("cEdit"))return;
+  const d=formData(),k=calc(d);
+  root.querySelector("#hTargets").innerHTML=d.targetsRaw.trim()?(k.t.byPhone?`휴대폰 번호 <b>${num(k.t.count)}</b>개 인식${k.t.dup?` (중복 ${num(k.t.dup)}개 제외)`:""}`:`번호가 없어 줄 수 <b>${num(k.t.count)}</b>줄을 발송 건수로 셉니다`):"붙여넣으면 휴대폰 번호를 세어 발송 건수를 자동으로 넣습니다.";
+  root.querySelector("#hBuyers").innerHTML=d.buyersRaw.trim()?`구매자 <b>${num(k.b.buyers)}</b>명 · 주문 ${num(k.b.orders)}건 · 매출 <b>${won(k.b.revenue)}</b>${k.b.outside?` · 발송 대상이 아닌 번호 ${num(k.b.outside)}줄 제외`:""}${k.b.noPhone?` · 번호 없는 줄 ${num(k.b.noPhone)}줄 제외`:""}`:"발송 대상과 같은 번호의 주문만 구매로 셉니다. 금액은 줄마다 결제금액(콤마·'원'이 붙은 숫자)을 읽습니다.";
+  root.querySelector("#fCalc").innerHTML=`<span>발송 <b>${num(k.sent)}</b>건</span><span>구매 <b>${num(k.buyers)}</b>건</span><span>전환율 <b>${k.conv}</b></span><span>매출 <b>${won(k.revenue)}</b></span><span>객단가 <b>${k.buyers?won(k.aov):"-"}</b></span><span>비용 <b>${k.cost?won(k.cost):"-"}</b></span><span>ROAS <b>${k.roas}</b></span>`;
+}
+async function saveEdit(){
+  const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
+  const d=formData();
+  if(!d.date){toast("발송일을 넣어주세요.");return;}
+  if(!d.name){toast("캠페인명을 넣어주세요.");return;}
+  const k=calc(d),ts=F.api.serverTimestamp(),me=who();
+  /* 목록에서 다시 계산하지만, 엑셀 내보내기·홈 화면 등에서 바로 쓰도록 계산 결과도 같이 저장한다. */
+  const row={...d,sent:k.sent,buyers:k.buyers,revenue:k.revenue,cost:k.cost,updatedAt:ts,updatedBy:me};
+  for(const x of Object.keys(row))if(row[x]===""||row[x]==null)row[x]=null;
+  try{
+    if(editId)await F.api.update(cref("campaigns/"+editId),row);
+    else await F.api.set(cref("campaigns/c"+uid()),{...row,createdAt:ts,createdBy:me});
+    toast(editId?"발송 기록을 수정했습니다.":"발송 기록을 추가했습니다.");closeEdit();
+  }catch(e){console.error(e);toast("저장하지 못했습니다. 서버 권한을 확인해주세요.");}
+}
+async function delEdit(){
+  const id=editId,c=camps[id];if(!id||!c)return;
+  if(!(await uiConfirm(`'${c.name||"발송 기록"}'을(를) 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`,{ok:"삭제"})))return;
+  try{await FBX.api.remove(cref("campaigns/"+id));toast("삭제했습니다.");closeEdit();}catch(e){console.error(e);toast("삭제하지 못했습니다.");}
+}
+/* 템플릿 불러오기: 작성 중인 문구가 있으면 바꿀지 묻는다. */
+async function useTpl(k){
+  const x=tpls[k],ta=root.querySelector("#fText");if(!x||!ta)return;
+  if(ta.value.trim()&&ta.value!==ta._tpl&&!(await uiConfirm("작성 중인 발송 문구를 템플릿 문구로 바꿀까요?",{ok:"바꾸기"})))return;
+  ta.value=x.text||"";ta._tpl=ta.value;
+  if(x.channel)root.querySelector("#fChannel").value=x.channel;
+  root.querySelector("#fTplName").value=x.name||"";recalc();
+}
+async function saveAsTpl(){
+  const text=val("fText").trim();if(!text){toast("발송 문구를 먼저 넣어주세요.");return;}
+  const name=await uiPrompt("템플릿 이름",{value:val("fTplName")||val("fName"),max:60});if(name==null||!name.trim())return;
+  const F=fb();if(!F)return;
+  try{await F.api.set(cref("templates/t"+uid()),{name:name.trim(),channel:val("fChannel"),text,updatedAt:F.api.serverTimestamp(),updatedBy:who()});
+    const nm=root.querySelector("#fTplName");if(nm)nm.value=name.trim();toast("템플릿으로 저장했습니다.");}
+  catch(e){console.error(e);toast("저장하지 못했습니다.");}
+}
+
+/* ---------- 템플릿 관리 ---------- */
+function openTpl(){closeTpl();const w=document.createElement("div");w.className="v-modal-wrap";w.id="cTpl";root.appendChild(w);drawTplModal();}
+function closeTpl(){document.getElementById("cTpl")?.remove();}
+function drawTplModal(){
+  const w=document.getElementById("cTpl");if(!w)return;
+  const t=Object.entries(tpls).sort((a,b)=>String(a[1].name).localeCompare(String(b[1].name),"ko"));
+  w.innerHTML=`<div class="v-modal c-modal" role="dialog" aria-modal="true" aria-label="템플릿 관리"><h2>템플릿 관리</h2>
+  <p class="v-save">자주 보내는 문구를 저장해 두고, 발송 기록을 쓸 때 '템플릿 불러오기'로 가져옵니다.</p>
+  ${t.length?`<div class="c-tpl-list">${t.map(([k,x])=>`<div class="c-tpl"><b>${esc(x.name)}</b><span class="v-save">${esc(x.channel||"")}</span><p>${esc(x.text)}</p><span><button type="button" class="v-btn" data-act="t-edit" data-v="${esc(k)}">수정</button><button type="button" class="v-btn" data-act="t-del" data-v="${esc(k)}">삭제</button></span></div>`).join("")}</div>`:`<div class="v-blank"><b>저장된 템플릿이 없습니다</b>'새 템플릿'을 누르거나 발송 기록 창에서 '이 문구를 템플릿으로 저장'을 누르세요.</div>`}
+  <div class="c-foot"><button type="button" class="v-btn" data-act="t-close">닫기</button><button type="button" class="v-btn primary" data-act="t-new">새 템플릿</button></div></div>`;
+}
+async function editTpl(k){
+  const x=k?tpls[k]:{name:"",channel:"알림톡",text:""};if(k&&!x)return;
+  const name=await uiPrompt("템플릿 이름",{value:x.name||"",max:60});if(name==null||!name.trim())return;
+  const text=await uiPrompt("템플릿 문구",{value:x.text||"",max:2000});if(text==null||!text.trim())return;
+  const F=fb();if(!F)return;
+  const row={name:name.trim(),channel:x.channel||"알림톡",text:text.trim(),updatedAt:F.api.serverTimestamp(),updatedBy:who()};
+  try{await F.api.set(cref("templates/"+(k||"t"+uid())),row);toast(k?"템플릿을 수정했습니다.":"템플릿을 추가했습니다.");}catch(e){console.error(e);toast("저장하지 못했습니다.");}
+}
+async function delTpl(k){
+  const x=tpls[k];if(!x)return;
+  if(!(await uiConfirm(`템플릿 '${x.name}'을(를) 삭제할까요?\n이미 저장한 발송 기록의 문구는 그대로 남습니다.`,{ok:"삭제"})))return;
+  try{await FBX.api.remove(cref("templates/"+k));}catch(e){console.error(e);toast("삭제하지 못했습니다.");}
+}
+
+/* ---------- 열기·닫기 ---------- */
+function open(){
+  if(!fb()){toast("서버에 연결되는 중입니다. 잠시 후 다시 눌러주세요.");return;}
+  if(!root)build();
+  start();
+  if(typeof closeCatalog==="function")closeCatalog();
+  if(typeof closePhone==="function")closePhone();
+  root.classList.add("on");root.focus({preventScroll:true});window.scrollTo(0,0);draw();
+  if(typeof syncSideMenu==="function")syncSideMenu();
+}
+function close(){
+  if(!root||!root.classList.contains("on"))return;
+  closeEdit();closeTpl();root.classList.remove("on");
+  if(typeof syncSideMenu==="function")syncSideMenu();
+}
+document.getElementById("openCrmBtn").addEventListener("click",open);
+window.crmCalc=calc;
 })();
 </script>
 <script id="pickerScript">
