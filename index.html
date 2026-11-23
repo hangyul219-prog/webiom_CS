@@ -2855,7 +2855,7 @@ textarea.v-in{display:block;resize:none;overflow:hidden;min-height:82px;backgrou
       <button class="side-link" id="openPhoneBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg><span>전화주문 가격표</span></button>
     <button class="side-link" id="openVocBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/><path d="M12 8v4M12 15.5v.5"/></svg>VOC 관리대장</button>
     <button class="side-link" id="openReturnBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>반품 관리</button>
-    <button class="side-link" id="openCrmBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4Z"/><path d="M8 9h8M8 12.5h5"/></svg>CRM 발송</button>
+    <button class="side-link" id="openCrmBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4Z"/><path d="M8 9h8M8 12.5h5"/></svg>CRM 관리</button>
     </nav>
     <div class="side-label" id="sideLabel">FAQ 카테고리</div>
     <nav class="cats" id="cats"></nav>
@@ -12333,9 +12333,9 @@ if(fb())start();
 })();
 </script>
 <script id="crmScript">
-/* ===== CRM 발송 기록: 문자·알림톡 발송 한 번 = 한 건. 템플릿, 발송 대상(엑셀에서 복사한 raw), 구매 내역(raw)을 붙여넣으면
-   발송 건수·구매 건수·매출·전환율·비용·ROAS를 자동으로 계산한다. 데이터는 FIREBASE_ROOT/crm/campaigns · crm/templates.
-   화면은 VOC 관리대장의 모양(v-*)을 그대로 쓴다(반품 관리와는 별개 메뉴·별개 데이터). */
+/* ===== CRM 관리: 고객·주문 Raw를 붙여넣으면 발송 대상을 조건별로 나눠 보여 주고(두뇌엔 닥터 재구매, 그로우업맥스 1·3·6·12개월, 미구매, 직접 조건),
+   고른 대상을 '발송 대상 목록'으로 저장한다. 저장한 목록에 전화주문 Raw를 붙여넣으면 그중 몇 명이 실제로 샀는지 전환 통계를 낸다.
+   데이터: FIREBASE_ROOT/crm/lists(발송 대상 목록·전환 통계), crm/templates(문구 템플릿). 화면은 VOC 관리대장 모양(v-*)을 쓴다(반품 관리와 별개). */
 (function(){
 "use strict";
 {const old=document.getElementById("crmStyle");if(old)old.remove();
@@ -12348,254 +12348,275 @@ if(fb())start();
  st.textContent=css+`
 .content>#crmApp{position:static;inset:auto;z-index:auto;grid-template-columns:minmax(0,1fr)}
 .content>#crmApp .v-main{overflow:visible}
-/* VOC 화면용 복사 규칙이 제목을 숨기므로 CRM 화면에서는 다시 보이게 한다(반품 관리와 같은 모양). */
 .content>#crmApp:not(#retApp) .v-page:not(.v-detail)>.v-title-row>.v-title{display:block}
 .content:has(>#crmApp.on)>.topbar,.content:has(>#crmApp.on)>main{display:none}
-/* 본문(.content z-index 7)이 왼쪽 메뉴(10) 아래라 팝업이 메뉴에 가려진다. 팝업이 떠 있는 동안만 본문을 위로 올린다(반품 관리 팝업도 같이). */
 .content:has(>#crmApp .v-modal-wrap),.content:has(>#retApp .v-modal-wrap){z-index:20}
-#crmApp .v-table{min-width:1100px}
-#crmApp .v-table td.c-num,#crmApp .v-table th.c-num{text-align:right;font-variant-numeric:tabular-nums}
-#crmApp .v-table td.c-name{max-width:260px}
-#crmApp .v-table td.c-name small{display:block;color:var(--v-mut);font-size:11.5px;overflow:hidden;text-overflow:ellipsis}
-#crmApp .c-modal{width:min(980px,100%)}
-#crmApp .c-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 12px;margin:12px 0}
-#crmApp .c-grid label,#crmApp .c-col label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--v-mut)}
-#crmApp .c-grid .c-wide{grid-column:span 2}
-#crmApp .c-modal input,#crmApp .c-modal select,#crmApp .c-modal textarea{height:32px;padding:0 9px;border:1px solid var(--v-line);border-radius:6px;background:var(--v-bg);color:var(--v-ink);font-size:13px;outline:0}
-#crmApp .c-modal textarea{height:auto;min-height:96px;padding:8px 10px;resize:vertical;line-height:1.5}
-#crmApp .c-modal textarea.c-raw{white-space:pre;font-size:12px;background:var(--v-side)}
-#crmApp .c-modal input:focus,#crmApp .c-modal select:focus,#crmApp .c-modal textarea:focus{border-color:var(--v-acc)}
-#crmApp .c-two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0}
-#crmApp .c-col{display:flex;flex-direction:column;gap:6px;min-width:0}
-#crmApp .c-hint{font-size:12px;color:var(--v-mut);line-height:1.5}
+#crmApp .v-table{min-width:900px}
+#crmApp .c-num{text-align:right!important;font-variant-numeric:tabular-nums}
+#crmApp textarea.c-raw{display:block;width:100%;height:130px;padding:9px 11px;border:1px solid var(--v-line);border-radius:7px;background:var(--v-side);resize:vertical;font-size:12px;white-space:pre;outline:0;color:var(--v-ink)}
+#crmApp textarea.c-raw:focus{border-color:var(--v-acc)}
+#crmApp .c-hint{font-size:12.5px;color:var(--v-mut);line-height:1.6;margin:6px 0}
 #crmApp .c-hint b{color:var(--v-ink);font-weight:600}
-#crmApp .c-calc{display:flex;flex-wrap:wrap;gap:6px 18px;padding:10px 12px;border-radius:8px;background:var(--v-side);font-size:13px;color:var(--v-ink2)}
-#crmApp .c-calc b{color:var(--v-ink);font-variant-numeric:tabular-nums}
+#crmApp .c-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0}
+#crmApp .c-row input[type=date],#crmApp .c-row input[type=number],#crmApp .c-row select{height:30px;padding:0 8px;border:1px solid var(--v-line);border-radius:6px;background:var(--v-bg);color:var(--v-ink);font-size:13px}
+#crmApp .c-segs{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin:10px 0}
+#crmApp .c-seg{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--v-line);border-radius:10px;background:var(--v-bg);text-align:left;cursor:pointer}
+#crmApp .c-seg:hover{border-color:var(--v-acc)}
+#crmApp .c-seg.on{border-color:var(--v-acc);background:var(--v-acc-soft);box-shadow:inset 0 0 0 1px var(--v-acc)}
+#crmApp .c-seg small{font-size:12px;color:var(--v-mut)}
+#crmApp .c-seg b{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+#crmApp .c-seg b small{font-size:12.5px;margin-left:2px}
+#crmApp .c-grp{font-size:12.5px;font-weight:600;color:var(--v-ink2);margin:14px 0 2px}
+#crmApp .c-res{margin-top:14px;border:1px solid var(--v-line);border-radius:10px;padding:12px 14px}
+#crmApp .c-res .v-table-wrap{max-height:46vh;overflow:auto}
+#crmApp .c-modal{width:min(900px,100%)}
+#crmApp .c-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:10px 0}
 #crmApp .c-foot{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:12px}
 #crmApp .c-foot .danger{margin-right:auto;color:#d33}
 #crmApp .c-tpl-list{max-height:52vh;overflow:auto;border:1px solid var(--v-line);border-radius:8px}
 #crmApp .c-tpl{display:grid;grid-template-columns:180px 90px minmax(0,1fr) auto;gap:10px;align-items:start;padding:9px 11px;border-bottom:1px solid var(--v-line);font-size:13px}
 #crmApp .c-tpl:last-child{border-bottom:0}
 #crmApp .c-tpl p{margin:0;white-space:pre-wrap;color:var(--v-ink2);max-height:5.6em;overflow:hidden}
-@media (max-width:900px){#crmApp .c-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#crmApp .c-two{grid-template-columns:1fr}#crmApp .v-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}`;
+@media (max-width:900px){#crmApp .c-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}`;
  document.head.appendChild(st);}
 
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad=n=>String(n).padStart(2,"0");
-const todayIso=()=>{const d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());};
+const isoOf=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const todayIso=()=>isoOf(new Date());
 const fmtDate=s=>s?s.replace(/-/g,"."):"";
 const toast=m=>showToast(m);
 const fb=()=>(typeof FBX!=="undefined"&&FBX&&FBX.ready&&FBX.user&&FBX.api&&FBX.db)?FBX:null;
 const cref=p=>FBX.api.ref(FBX.db,FIREBASE_ROOT+"/crm"+(p?"/"+p:""));
 const who=()=>(window.WB_NAMES&&window.WB_NAMES[FBX.loginId])||FBX.loginId||"사용자";
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const won=n=>(Math.round(Number(n)||0)).toLocaleString()+"원";
 const num=n=>(Number(n)||0).toLocaleString();
+const won=n=>Math.round(Number(n)||0).toLocaleString()+"원";
 const pct=(a,b)=>b?(a/b*100).toFixed(a/b<.1?2:1)+"%":"-";
-const CHANNELS=["알림톡","문자(SMS)","문자(LMS)","문자(MMS)","친구톡","앱푸시","기타"];
+const DAY=86400000;
+const daysBetween=(a,b)=>Math.round((Date.parse(b)-Date.parse(a))/DAY);
+const fmtPhone=p=>p.length===11?p.slice(0,3)+"-"+p.slice(3,7)+"-"+p.slice(7):p.slice(0,3)+"-"+p.slice(3,6)+"-"+p.slice(6);
 
-/* ---------- 붙여넣은 raw 읽기 ---------- */
-/* 휴대폰 번호(010-1234-5678, 01012345678, 10-1234-5678 등)를 11자리 숫자로 모은다. */
+/* ---------- Raw 읽기 ---------- */
+/* 휴대폰 번호를 11자리(또는 10자리) 숫자로. 주문번호처럼 더 긴 숫자 속의 일부는 잡지 않는다. */
 const PHONE_RE=/(?<![\d-])(?:\+?82[-\s]?)?0?1[016789][-\s.]?\d{3,4}[-\s.]?\d{4}(?![\d-])/g;
 const normPhone=s=>{let d=String(s).replace(/\D/g,"");if(d.startsWith("82"))d=d.slice(2);if(!d.startsWith("0"))d="0"+d;return /^01[016789]\d{7,8}$/.test(d)?d:"";};
-function parseTargets(raw){
-  const lines=String(raw||"").split(/\r?\n/).filter(l=>l.trim());
-  const all=[];for(const l of lines)for(const m of l.match(PHONE_RE)||[]){const p=normPhone(m);if(p)all.push(p);}
-  const set=new Set(all);
-  /* 번호가 하나도 없으면 줄 수를 발송 건수로 본다(이름·회원ID만 붙여넣은 경우) */
-  return {phones:set,count:set.size||lines.length,dup:all.length-set.size,lines:lines.length,byPhone:set.size>0};
+/* 날짜: 2026-11-20 / 2026.11.20 / 2026/11/20 / 20261120 (시간이 붙어 있어도 됨) */
+const dateOf=s=>{const m=String(s||"").match(/(20\d{2})[-./년\s]*(\d{1,2})[-./월\s]*(\d{1,2})/)||String(s||"").match(/(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)/);
+  if(!m)return "";const y=+m[1],mo=+m[2],d=+m[3];return mo>=1&&mo<=12&&d>=1&&d<=31?`${y}-${pad(mo)}-${pad(d)}`:"";};
+const moneyOf=s=>{const t=String(s||"").replace(/[,\s원₩]/g,"");return /^-?\d+(\.\d+)?$/.test(t)?Number(t):0;};
+/* 제목 행의 칸 이름으로 어떤 칸인지 고른다(앞에 있는 이름일수록 우선). */
+const COLS={
+  name:[/^(고객명|이름|성명)$/,/주문자|수령인|받는\s*분|고객명|이름|성명/],
+  phone:[/휴대폰|핸드폰|모바일|HP/i,/연락처|전화/],
+  date:[/주문\s*일|구매\s*일|결제\s*일|주문\s*일시|주문\s*시간|구매\s*일시/,/최근\s*구매|최종\s*구매|일자|날짜/],
+  product:[/^(상품명|제품명)$/,/상품|제품|품목/],
+  amount:[/결제\s*금액|주문\s*금액|구매\s*금액|실결제/,/금액|매출|판매가|합계/],
+  qty:[/수량/]};
+function detectCols(cells){
+  const used=new Set(),col={};
+  for(const [k,res] of Object.entries(COLS)){for(const re of res){const i=cells.findIndex((c,j)=>!used.has(j)&&re.test(String(c).trim()));if(i>=0){col[k]=i;used.add(i);break;}}}
+  return col;
 }
-/* 구매 내역: 한 줄 = 주문 한 건. 줄에서 휴대폰 번호와 금액(콤마가 있거나 100원 이상인 마지막 숫자, 번호·날짜 제외)을 찾는다.
-   발송 대상 번호가 있으면 그 번호와 같은 줄만 구매로 센다. 구매 건수 = 산 사람 수(번호 기준). */
-/* shortcut: 금액은 줄의 마지막 금액처럼 보이는 숫자로 읽는다(배송비 칸이 뒤에 있으면 틀릴 수 있음) — 틀리면 매출 직접 입력, 주문 엑셀 양식이 정해지면 열 이름으로 읽게 바꾼다. */
-function lineAmount(l){
-  const t=l.replace(PHONE_RE," ").replace(/\d{4}[-./]\d{1,2}[-./]\d{1,2}/g," ").replace(/\d{1,2}:\d{2}(:\d{2})?/g," ");
-  const ms=[...t.matchAll(/(\d{1,3}(?:,\d{3})+|\d+)(?:\s*원)?/g)].map(m=>({v:Number(m[1].replace(/,/g,"")),c:/,/.test(m[1])||/원/.test(m[0])}));
-  const pick=ms.filter(m=>m.c).pop()||ms.filter(m=>m.v>=100&&m.v<100000000&&String(m.v).length<=8).pop();
-  return pick?pick.v:0;
-}
-function parseBuyers(raw,targets){
+/* Raw 한 덩어리 → 줄 목록 [{phone,name,date,product,amount}]. 제목 행이 있으면 칸 이름으로, 없으면 줄에서 번호·날짜를 찾아 읽는다. */
+function parseRows(raw){
   const lines=String(raw||"").split(/\r?\n/).filter(l=>l.trim());
-  const buyers=new Set();let revenue=0,orders=0,outside=0,noPhone=0;
-  for(const l of lines){
-    const p=(l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"";
-    if(!p){noPhone++;continue;}
-    if(targets&&targets.byPhone&&!targets.phones.has(p)){outside++;continue;}
-    buyers.add(p);orders++;revenue+=lineAmount(l);
+  if(!lines.length)return {rows:[],col:null,skipped:0};
+  let col=null,start=0;
+  for(let i=0;i<Math.min(lines.length,5);i++){const c=detectCols(lines[i].split("\t"));if(c.phone!=null&&(c.name!=null||c.date!=null||c.product!=null)){col=c;start=i+1;break;}}
+  const rows=[];let skipped=0;
+  for(const l of lines.slice(start)){
+    const c=l.split("\t");let phone="",r;
+    if(col){phone=normPhone(c[col.phone]||"")||((l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"");
+      r={name:String(c[col.name]??"").trim(),date:col.date!=null?dateOf(c[col.date]):"",product:col.product!=null?String(c[col.product]||"").trim():"",amount:col.amount!=null?moneyOf(c[col.amount]):0};}
+    else{phone=(l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"";r={name:"",date:dateOf(l.replace(PHONE_RE," ")),product:"",amount:0};}
+    if(!phone){skipped++;continue;}
+    rows.push({phone,...r});
   }
-  return {buyers:buyers.size,orders,revenue,outside,noPhone,lines:lines.length};
+  return {rows,col,skipped};
 }
+/* 줄 목록 → 고객(번호) 목록. 구매 = 주문일이나 상품이 있는 줄. 상품별 마지막 구매일도 모은다. */
+function customersOf(rows){
+  const m=new Map();
+  for(const r of rows){
+    let c=m.get(r.phone);if(!c){c={phone:r.phone,name:"",orders:0,last:"",amount:0,prod:new Map()};m.set(r.phone,c);}
+    if(r.name&&!c.name)c.name=r.name;
+    if(r.date||r.product){c.orders++;c.amount+=r.amount||0;if(r.date&&r.date>c.last)c.last=r.date;
+      if(r.product){const p=c.prod.get(r.product);if(!p||r.date>p)c.prod.set(r.product,r.date||p||"");}}
+  }
+  return [...m.values()];
+}
+/* 상품 묶음. 그로우업맥스 칼슘젤리는 다른 상품이라 그로우업맥스에서 뺀다. */
+const BRAIN=p=>/두뇌엔/.test(p);
+const GROW=p=>/그로우\s*업?\s*맥스/i.test(p)&&!/칼슘|젤리/.test(p);
+const lastOf=(c,test)=>{let d="";for(const [p,dt] of c.prod)if(test(p)&&dt>d)d=dt;return d;};
+const boughtAny=(c,test)=>{for(const p of c.prod.keys())if(test(p))return true;return false;};
+/* 기본 제공 조건. 경과일 = 기준일 - 그 상품 마지막 구매일. */
+const SEGS=[
+  {id:"brain90",grp:"두뇌엔 닥터",name:"3개월 이내 구매하지 않은 고객",desc:"두뇌엔 제품 마지막 구매가 90일 넘게 지난 고객",test:(c,ref)=>{const d=lastOf(c,BRAIN);return !!d&&daysBetween(d,ref)>90;}},
+  {id:"grow1",grp:"그로우업맥스",name:"1개월",desc:"마지막 구매 후 30~89일",test:(c,ref)=>{const d=lastOf(c,GROW),n=d?daysBetween(d,ref):-1;return n>=30&&n<90;}},
+  {id:"grow3",grp:"그로우업맥스",name:"3개월",desc:"마지막 구매 후 90~179일",test:(c,ref)=>{const d=lastOf(c,GROW),n=d?daysBetween(d,ref):-1;return n>=90&&n<180;}},
+  {id:"grow6",grp:"그로우업맥스",name:"6개월",desc:"마지막 구매 후 180~364일",test:(c,ref)=>{const d=lastOf(c,GROW),n=d?daysBetween(d,ref):-1;return n>=180&&n<365;}},
+  {id:"grow12",grp:"그로우업맥스",name:"12개월",desc:"마지막 구매 후 365일 이상",test:(c,ref)=>{const d=lastOf(c,GROW),n=d?daysBetween(d,ref):-1;return n>=365;}},
+  {id:"none",grp:"공통",name:"미구매 고객",desc:"구매 이력이 한 번도 없는 고객",test:c=>!c.orders}];
 console.assert((()=>{
-  const t=parseTargets("홍길동\t010-1234-5678\n김철수 01011112222\n010-1234-5678\n\n이영희\t10-3333-4444");
-  const b=parseBuyers("2026-11-20\t홍길동\t010-1234-5678\t39,000\n2026-11-21\t홍길동\t01012345678\t12000\n남\t010-9999-8888\t50,000원\n김철수\t01011112222\t2\t78,000",t);
-  return t.count===3&&t.dup===1&&b.buyers===2&&b.orders===3&&b.revenue===129000&&b.outside===1&&parseTargets("a\nb\n c ").count===3&&lineAmount("ORD-1 3개 45,900원")===45900&&lineAmount("2026-11-20 13:05 결제 33000")===33000&&parseTargets("20261118-0000058\n2026111800013").byPhone===false;
-})(),"CRM 붙여넣기 해석 자가 점검 실패");
+  const raw="주문일\t고객명\t휴대폰\t상품명\t결제금액\n2026-11-01\t홍길동\t010-1111-1111\t두뇌엔닥터PS맥스\t89,000\n2026-07-01\t홍길동\t010-1111-1111\t두뇌엔닥터PS맥스\t89,000\n2026-07-20\t김철수\t01022222222\t두뇌엔닥터PS70(30포)\t59000\n2026-10-10\t이영희\t010-3333-3333\t에스클래스그로우업맥스(12주)\t159,000\n2026-05-01\t박민수\t010-4444-4444\t에스클래스그로우업맥스칼슘젤리\t39,000\n\t최미구\t010-5555-5555\t\t\n2025-10-01\t정오래\t010-6666-6666\tS클래스 그로우업맥스(24주)\t259,000";
+  const p=parseRows(raw),cs=customersOf(p.rows),ref="2026-11-23",ids=s=>cs.filter(c=>SEGS.find(x=>x.id===s).test(c,ref)).map(c=>c.name).join();
+  return p.rows.length===7&&cs.length===6&&ids("brain90")==="김철수"&&ids("grow1")==="이영희"&&ids("grow3")===""&&ids("grow12")==="정오래"&&ids("none")==="최미구"
+    &&dateOf("2026.11.3 14:05")==="2026-11-03"&&dateOf("20261120")==="2026-11-20"&&parseRows("20261118-0000058\t홍").rows.length===0;
+})(),"CRM 대상 분류 자가 점검 실패");
 
-/* 한 건의 숫자. 직접 입력값이 있으면 그 값을 쓴다. */
-function calc(c){
-  const t=parseTargets(c.targetsRaw);
-  const b=parseBuyers(c.buyersRaw,t);
-  const sent=c.sentManual!=null&&c.sentManual!==""?Number(c.sentManual):t.count;
-  const buyers=c.buyersManual!=null&&c.buyersManual!==""?Number(c.buyersManual):b.buyers;
-  const revenue=c.revenueManual!=null&&c.revenueManual!==""?Number(c.revenueManual):b.revenue;
-  const cost=sent*(Number(c.unitCost)||0);
-  return {t,b,sent,buyers,revenue,cost,conv:pct(buyers,sent),aov:buyers?revenue/buyers:0,roas:cost?Math.round(revenue/cost*100).toLocaleString()+"%":"-"};
+/* 전환 통계: 목록의 번호 중 전화주문 Raw에 나온 번호. 기준일(발송일) 이후 주문만 센다(날짜 없는 줄은 셈). */
+function convOf(list,raw,since){
+  const set=new Set(list.phones||[]),p=parseRows(raw),buyers=new Map();let orders=0,revenue=0,outside=0,before=0;
+  for(const r of p.rows){
+    if(!set.has(r.phone)){outside++;continue;}
+    if(since&&r.date&&r.date<since){before++;continue;}
+    orders++;revenue+=r.amount||0;const b=buyers.get(r.phone)||{orders:0,amount:0,prods:new Set()};b.orders++;b.amount+=r.amount||0;if(r.product)b.prods.add(r.product);buyers.set(r.phone,b);
+  }
+  const byProd={};for(const b of buyers.values())for(const x of b.prods)byProd[x]=(byProd[x]||0)+1;
+  return {targets:set.size,buyers:buyers.size,orders,revenue,outside,before,skipped:p.skipped,byProd,col:p.col};
 }
+console.assert((()=>{const r=convOf({phones:["01011111111","01022222222","01033333333"]},"주문일\t이름\t연락처\t상품\t금액\n2026-11-25\ta\t010-1111-1111\t두뇌엔닥터PS맥스\t89000\n2026-11-26\ta\t010-1111-1111\t두뇌엔닥터PS맥스\t89000\n2026-11-01\tb\t010-2222-2222\tx\t10000\n2026-11-25\tz\t010-9999-9999\tx\t5000","2026-11-23");
+  return r.buyers===1&&r.orders===2&&r.revenue===178000&&r.before===1&&r.outside===1&&r.byProd["두뇌엔닥터PS맥스"]===1;})(),"CRM 전환 통계 자가 점검 실패");
 
-/* 목록용 계산은 기록이 바뀔 때만 다시 한다(검색할 때마다 붙여넣은 수천 줄을 다시 읽지 않게). */
-const CALC=new Map(),calcOf=c=>{const h=CALC.get(c.id),sig=c.updatedAt+"|"+(c.targetsRaw||"").length+"|"+(c.buyersRaw||"").length;if(h&&h.sig===sig)return h.k;const k=calc(c);CALC.set(c.id,{sig,k});return k;};
 /* ---------- 상태 ---------- */
-let root,main,camps={},tpls={},unsub=null,loaded=false,err="";
-const S={month:todayIso().slice(0,7),q:""};
+let root,main,lists={},tpls={},unsub=null,loaded=false,err="";
+const S={tab:"seg",raw:"",ref:todayIso(),sel:"brain90",cProd:"",cMode:"over",cDays:90,parsed:null};
 function start(){
   const F=fb();if(!F||unsub)return;
-  const u1=F.api.onValue(cref("campaigns"),s=>{camps=s.val()||{};loaded=true;err="";draw();},e=>{console.error("crm",e);err="서버 권한을 확인해주세요. Firebase Realtime Database 규칙에서 webiomCs/v1/crm 경로의 읽기·쓰기를 허용해야 합니다.";loaded=true;draw();});
+  const u1=F.api.onValue(cref("lists"),s=>{lists=s.val()||{};loaded=true;err="";if(S.tab==="conv")draw();drawConvModal();},e=>{console.error("crm",e);err="서버 권한을 확인해주세요. Firebase Realtime Database 규칙에서 webiomCs/v1/crm 경로의 읽기·쓰기를 허용해야 합니다.";loaded=true;draw();});
   const u2=F.api.onValue(cref("templates"),s=>{tpls=s.val()||{};drawTplModal();},e=>console.error("crm tpl",e));
   unsub=()=>{u1();u2();};
-  F.unsubs.push(()=>{if(unsub)unsub();unsub=null;camps={};tpls={};loaded=false;close();});
+  F.unsubs.push(()=>{if(unsub)unsub();unsub=null;lists={};tpls={};loaded=false;close();});
 }
-const list=()=>Object.entries(camps).map(([id,c])=>({id,...c})).sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.createdAt||0)-(a.createdAt||0));
 
 /* ---------- 화면 ---------- */
 function build(){
-  root=document.createElement("div");root.id="crmApp";root.tabIndex=-1;root.setAttribute("aria-label","CRM 발송 기록");
+  root=document.createElement("div");root.id="crmApp";root.tabIndex=-1;root.setAttribute("aria-label","CRM 관리");
   root.innerHTML=`<div class="v-main" id="cMain"></div>`;
   (document.querySelector(".content")||document.body).appendChild(root);main=root.querySelector("#cMain");
   document.querySelector(".side")?.addEventListener("click",e=>{if(root.classList.contains("on")&&e.target.closest(".side-link:not(#openCrmBtn),.cat"))close();},true);
   root.addEventListener("click",onClick);
-  root.addEventListener("input",onInput);
+  let tm=null;
+  root.addEventListener("input",e=>{const t=e.target;
+    if(t.id==="cRaw"){S.raw=t.value;clearTimeout(tm);tm=setTimeout(()=>{S.parsed=null;drawSeg();},250);}
+    else if(t.id==="vRaw")drawConvCalc();
+    else if(t.id==="cDays"){S.cDays=Number(t.value)||0;drawSeg();}});
   root.addEventListener("change",e=>{const t=e.target;
-    if(t.id==="cMonth"){S.month=t.value;draw();}
-    else if(t.id==="fTpl")useTpl(t.value);});
+    if(t.id==="cRef"){S.ref=t.value||todayIso();drawSeg();}
+    else if(t.id==="cProd"){S.cProd=t.value;S.sel="custom";drawSeg();}
+    else if(t.id==="cMode"){S.cMode=t.value;S.sel="custom";drawSeg();}
+    else if(t.id==="vSince")drawConvCalc();});
   window.addEventListener("keydown",e=>{if(!root.classList.contains("on")||e.key!=="Escape"||document.querySelector(".ui-dlg-wrap"))return;
-    if(document.getElementById("cEdit")){e.preventDefault();closeEdit();}else if(document.getElementById("cTpl")){e.preventDefault();closeTpl();}},true);
+    if(document.getElementById("cConv")){e.preventDefault();closeConv();}else if(document.getElementById("cTpl")){e.preventDefault();closeTpl();}},true);
 }
 function draw(){
   if(!root||!root.classList.contains("on"))return;
-  const all=list(),m=S.month,q=S.q.trim().toLowerCase();
-  const shown=all.filter(c=>(!m||String(c.date||"").startsWith(m))&&(!q||[c.name,c.channel,c.templateName,c.memo].some(v=>String(v||"").toLowerCase().includes(q))));
-  const rows=shown.map(c=>({c,k:calcOf(c)}));
-  const sum=rows.reduce((s,{k})=>({sent:s.sent+k.sent,buyers:s.buyers+k.buyers,revenue:s.revenue+k.revenue,cost:s.cost+k.cost}),{sent:0,buyers:0,revenue:0,cost:0});
-  const months=[...new Set(all.map(c=>String(c.date||"").slice(0,7)).filter(Boolean))].sort().reverse();
-  const qEl=root.querySelector("#cSearch"),hadFocus=document.activeElement===qEl,pos=qEl&&qEl.selectionStart;
+  const n=Object.keys(lists).length;
   main.innerHTML=`${err?`<div class="v-banner" role="alert">${esc(err)}</div>`:""}<div class="v-page v-wide v-list-page">
-  <div class="v-title-row"><h1 class="v-title">CRM 발송 기록</h1><span class="v-spacer"></span>
-    <select class="v-filter${m?" set":""}" id="cMonth" aria-label="발송 월"><option value="">전체 기간</option>${[...new Set([todayIso().slice(0,7),...months])].sort().reverse().map(x=>`<option value="${x}"${x===m?" selected":""}>${x.replace("-",".")}</option>`).join("")}</select>
-    <label class="v-search"><svg class="vi" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="cSearch" type="search" placeholder="캠페인명·채널·템플릿 검색" value="${esc(S.q)}" aria-label="발송 기록 검색"></label>
-    <button type="button" class="v-btn" data-act="tpl">템플릿 관리</button>
-    <button type="button" class="v-btn primary" data-act="new">새 발송 기록</button></div>
-  <div class="v-kpis">
-    <div class="v-kpi"><span>발송 건수<small>${m?m.replace("-",".")+" · ":""}${rows.length}회 발송</small></span><b>${num(sum.sent)}<small>건</small></b></div>
-    <div class="v-kpi"><span>구매 건수<small>전환율 ${pct(sum.buyers,sum.sent)}</small></span><b>${num(sum.buyers)}<small>건</small></b></div>
-    <div class="v-kpi"><span>매출<small>객단가 ${sum.buyers?won(sum.revenue/sum.buyers):"-"}</small></span><b>${num(sum.revenue)}<small>원</small></b></div>
-    <div class="v-kpi"><span>발송 비용<small>ROAS ${sum.cost?Math.round(sum.revenue/sum.cost*100).toLocaleString()+"%":"-"}</small></span><b>${num(sum.cost)}<small>원</small></b></div></div>
-  ${!loaded?`<div class="v-blank"><b>불러오는 중…</b></div>`:!rows.length?`<div class="v-blank"><b>${all.length?"조건에 맞는 발송 기록이 없습니다":"아직 발송 기록이 없습니다"}</b>${all.length?"기간이나 검색어를 바꿔보세요.":"'새 발송 기록'을 눌러 템플릿·발송 대상·구매 내역을 붙여넣으면 숫자가 자동으로 계산됩니다."}</div>`
-  :`<div class="v-table-wrap"><table class="v-table"><thead><tr><th>발송일</th><th>캠페인</th><th>채널</th><th class="c-num">발송</th><th class="c-num">구매</th><th class="c-num">전환율</th><th class="c-num">매출</th><th class="c-num">객단가</th><th class="c-num">비용</th><th class="c-num">ROAS</th><th>작성</th></tr></thead><tbody>${
-    rows.map(({c,k})=>`<tr data-act="edit" data-v="${esc(c.id)}"><td>${esc(fmtDate(c.date))}</td><td class="c-name" title="${esc(c.name)}">${esc(c.name||"(이름 없음)")}${c.templateName?`<small>${esc(c.templateName)}</small>`:""}</td><td>${esc(c.channel||"")}</td><td class="c-num">${num(k.sent)}</td><td class="c-num">${num(k.buyers)}</td><td class="c-num">${k.conv}</td><td class="c-num">${num(k.revenue)}</td><td class="c-num">${k.buyers?num(Math.round(k.aov)):"-"}</td><td class="c-num">${k.cost?num(k.cost):"-"}</td><td class="c-num">${k.roas}</td><td>${esc(c.updatedBy||c.createdBy||"")}</td></tr>`).join("")
-  }</tbody></table></div>`}</div>`;
-  if(hadFocus){const n=root.querySelector("#cSearch");n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}
+  <div class="v-title-row"><h1 class="v-title">CRM 관리</h1><span class="v-spacer"></span><button type="button" class="v-btn" data-act="tpl">템플릿 관리</button></div>
+  <div class="v-tabs" role="tablist"><button type="button" class="v-tab${S.tab==="seg"?" on":""}" role="tab" aria-selected="${S.tab==="seg"}" data-act="tab" data-v="seg">대상 분류·추출</button><button type="button" class="v-tab${S.tab==="conv"?" on":""}" role="tab" aria-selected="${S.tab==="conv"}" data-act="tab" data-v="conv">전화주문 전환 통계<small>${n}</small></button></div>
+  <div id="cBody"></div></div>`;
+  S.tab==="seg"?drawSegShell():drawConv();
 }
-function onInput(e){
-  if(e.target.id==="cSearch"){S.q=e.target.value;draw();return;}
-  if(e.target.closest("#cEdit"))recalc();
+function drawSegShell(){
+  root.querySelector("#cBody").innerHTML=`
+  <div class="c-hint">고객·주문 내역을 엑셀에서 <b>제목 행까지</b> 복사해 붙여넣으세요. 칸 이름(고객명·휴대폰·주문일·상품명·결제금액)으로 읽고, 휴대폰 번호 기준으로 한 사람씩 묶습니다. 주문일·상품이 없는 줄은 '구매 이력 없음'으로 봅니다.</div>
+  <textarea id="cRaw" class="c-raw" spellcheck="false" placeholder="주문일&#9;고객명&#9;휴대폰&#9;상품명&#9;결제금액 …" aria-label="고객·주문 Raw">${esc(S.raw)}</textarea>
+  <div class="c-row"><span class="c-hint" style="margin:0">기준일</span><input id="cRef" type="date" value="${esc(S.ref)}" aria-label="경과일 기준일"><span class="c-hint" id="cInfo" style="margin:0"></span></div>
+  <div id="cSegs"></div><div id="cRes"></div>`;
+  drawSeg();
 }
-function onClick(e){
-  /* 발송 기록 창은 바깥을 눌러도 닫지 않는다(붙여넣은 내용이 날아가지 않게). */
-  if(e.target.id==="cTpl"){closeTpl();return;}
-  const el=e.target.closest("[data-act]");if(!el)return;
-  switch(el.dataset.act){
-    case "new":openEdit(null);break;
-    case "edit":openEdit(el.dataset.v);break;
-    case "e-close":closeEdit();break;
-    case "e-save":saveEdit();break;
-    case "e-del":delEdit();break;
-    case "e-savetpl":saveAsTpl();break;
-    case "tpl":openTpl();break;
-    case "t-close":closeTpl();break;
-    case "t-new":editTpl(null);break;
-    case "t-edit":editTpl(el.dataset.v);break;
-    case "t-del":delTpl(el.dataset.v);break;
-  }
+function parsed(){if(!S.parsed){const p=parseRows(S.raw);S.parsed={...p,cs:customersOf(p.rows)};}return S.parsed;}
+function customSeg(){
+  const prod=S.cProd,days=S.cDays,test=prod?(p=>p===prod):(()=>true),label=prod||"전체 상품";
+  return {id:"custom",grp:"직접 조건",name:`${label} · ${S.cMode==="over"?`마지막 구매 ${days}일 넘음`:S.cMode==="within"?`${days}일 이내 구매`:"구매한 적 없음"}`,
+    test:(c,ref)=>{if(S.cMode==="never")return !boughtAny(c,test);const d=lastOf(c,test);if(!d)return false;const n=daysBetween(d,ref);return S.cMode==="over"?n>days:n<=days;}};
+}
+function drawSeg(){
+  const box=root.querySelector("#cSegs");if(!box)return;
+  const p=parsed(),cs=p.cs,ref=S.ref;
+  const info=root.querySelector("#cInfo");
+  const colTxt=p.col?Object.entries({name:"고객명",phone:"휴대폰",date:"주문일",product:"상품명",amount:"금액"}).filter(([k])=>p.col[k]!=null).map(([,v])=>v).join("·"):"";
+  info.innerHTML=S.raw.trim()?`고객 <b>${num(cs.length)}</b>명(줄 ${num(p.rows.length)})${p.skipped?` · 휴대폰 번호 없는 줄 ${num(p.skipped)}줄 제외`:""}${colTxt?` · 읽은 칸: ${colTxt}`:` · 제목 행을 찾지 못해 번호·날짜만 읽었습니다`}`:"";
+  if(!cs.length){box.innerHTML="";root.querySelector("#cRes").innerHTML="";return;}
+  const prods=[...new Set(cs.flatMap(c=>[...c.prod.keys()]))].sort((a,b)=>a.localeCompare(b,"ko"));
+  if(S.cProd&&!prods.includes(S.cProd))S.cProd="";
+  const all=[...SEGS,customSeg()];
+  const card=s=>{const n=cs.filter(c=>s.test(c,ref)).length;return `<button type="button" class="c-seg${S.sel===s.id?" on":""}" data-act="seg" data-v="${s.id}"><small>${esc(s.grp)}</small><span>${esc(s.name)}</span><b>${num(n)}<small>명</small></b><small>${esc(s.desc||"")}</small></button>`;};
+  const grp=g=>all.filter(s=>s.grp===g).map(card).join("");
+  box.innerHTML=`<div class="c-grp">두뇌엔 닥터</div><div class="c-segs">${grp("두뇌엔 닥터")}</div>
+  <div class="c-grp">그로우업맥스 (마지막 구매 후 지난 기간)</div><div class="c-segs">${grp("그로우업맥스")}</div>
+  <div class="c-grp">미구매 · 직접 조건</div><div class="c-segs">${grp("공통")}${card(customSeg())}</div>
+  <div class="c-row"><span class="c-hint" style="margin:0">직접 조건</span><select id="cProd" aria-label="상품"><option value="">전체 상품</option>${prods.map(x=>`<option${x===S.cProd?" selected":""}>${esc(x)}</option>`).join("")}</select>
+    <select id="cMode" aria-label="조건"><option value="over"${S.cMode==="over"?" selected":""}>마지막 구매가 N일 넘은 고객</option><option value="within"${S.cMode==="within"?" selected":""}>N일 이내 구매한 고객</option><option value="never"${S.cMode==="never"?" selected":""}>이 상품을 산 적 없는 고객</option></select>
+    <input id="cDays" type="number" min="0" value="${S.cDays}" aria-label="일수" style="width:80px"><span class="c-hint" style="margin:0">일</span></div>`;
+  drawRes();
+}
+function selected(){const p=parsed(),s=[...SEGS,customSeg()].find(x=>x.id===S.sel)||SEGS[0];return {s,list:p.cs.filter(c=>s.test(c,S.ref))};}
+function drawRes(){
+  const el=root.querySelector("#cRes");if(!el)return;
+  const {s,list}=selected(),show=list.slice(0,300);
+  el.innerHTML=`<div class="c-res"><div class="c-row" style="margin-top:0"><b>${esc(s.grp)} · ${esc(s.name)}</b><span class="c-hint" style="margin:0">${num(list.length)}명</span><span class="v-spacer"></span>
+    <button type="button" class="v-btn" data-act="copy-phones"${list.length?"":" disabled"}>휴대폰 번호 복사</button><button type="button" class="v-btn" data-act="copy-rows"${list.length?"":" disabled"}>이름·번호 복사</button><button type="button" class="v-btn primary" data-act="save-list"${list.length?"":" disabled"}>발송 대상으로 저장</button></div>
+    ${list.length?`<div class="v-table-wrap"><table class="v-table"><thead><tr><th>고객명</th><th>휴대폰</th><th>마지막 구매일</th><th class="c-num">경과일</th><th class="c-num">구매 횟수</th><th class="c-num">총 구매액</th><th>구매 상품</th></tr></thead><tbody>${show.map(c=>`<tr><td>${esc(c.name)}</td><td>${fmtPhone(c.phone)}</td><td>${fmtDate(c.last)}</td><td class="c-num">${c.last?num(daysBetween(c.last,S.ref)):"-"}</td><td class="c-num">${num(c.orders)}</td><td class="c-num">${c.amount?num(c.amount):"-"}</td><td title="${esc([...c.prod.keys()].join(", "))}">${esc([...c.prod.keys()].join(", "))}</td></tr>`).join("")}</tbody></table></div>${list.length>show.length?`<div class="c-hint">처음 ${num(show.length)}명만 보입니다. 복사·저장은 ${num(list.length)}명 전체가 됩니다.</div>`:""}`:`<div class="c-hint">이 조건에 맞는 고객이 없습니다.</div>`}</div>`;
+}
+const copy=t=>navigator.clipboard.writeText(t).then(()=>toast("복사했습니다. 엑셀이나 발송 화면에 붙여넣으세요."),()=>toast("복사하지 못했습니다."));
+async function saveList(){
+  const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
+  const {s,list}=selected();if(!list.length)return;
+  const name=await uiPrompt(`발송 대상 목록 이름\n${num(list.length)}명을 저장합니다. 전화주문 전환 통계에서 이 목록으로 구매 여부를 확인합니다.`,{value:`${S.ref.slice(5).replace("-","/")} ${s.grp} ${s.name}`,max:80});
+  if(name==null||!name.trim())return;
+  const row={name:name.trim(),seg:`${s.grp} · ${s.name}`,ref:S.ref,sentAt:todayIso(),count:list.length,phones:list.map(c=>c.phone),names:list.map(c=>c.name||""),createdAt:F.api.serverTimestamp(),createdBy:who()};
+  try{await F.api.set(cref("lists/l"+uid()),row);toast(`'${row.name}' ${num(list.length)}명을 저장했습니다.`);}catch(e){console.error(e);toast("저장하지 못했습니다. 서버 권한을 확인해주세요.");}
 }
 
-/* ---------- 발송 기록 입력 창 ---------- */
-let editId=null;
-const val=id=>root.querySelector("#"+id)?.value??"";
-function openEdit(id){
-  closeEdit();editId=id;
-  const c=id?camps[id]||{}:{date:todayIso(),channel:"알림톡"};
-  const tplOpts=Object.entries(tpls).sort((a,b)=>String(a[1].name).localeCompare(String(b[1].name),"ko"));
-  const w=document.createElement("div");w.className="v-modal-wrap";w.id="cEdit";
-  w.innerHTML=`<div class="v-modal c-modal" role="dialog" aria-modal="true" aria-label="발송 기록"><h2>${id?"발송 기록 수정":"새 발송 기록"}</h2>
-  <div class="c-grid">
-    <label>발송일<input id="fDate" type="date" value="${esc(c.date||"")}"></label>
-    <label class="c-wide">캠페인명<input id="fName" type="text" maxlength="80" placeholder="예: 11월 맥스 재구매 알림톡" value="${esc(c.name||"")}"></label>
-    <label>채널<select id="fChannel">${CHANNELS.map(x=>`<option${x===c.channel?" selected":""}>${x}</option>`).join("")}</select></label>
-    <label class="c-wide">템플릿<select id="fTpl"><option value="">템플릿 불러오기…</option>${tplOpts.map(([k,t])=>`<option value="${esc(k)}">${esc(t.name)}</option>`).join("")}</select></label>
-    <label>템플릿 이름<input id="fTplName" type="text" maxlength="60" value="${esc(c.templateName||"")}"></label>
-    <label>건당 비용(원)<input id="fUnit" type="number" min="0" step="0.1" value="${esc(c.unitCost??"")}" placeholder="예: 8"></label></div>
-  <div class="c-col"><label>발송 문구<textarea id="fText" rows="5" placeholder="고객에게 보낸 문구">${esc(c.template||"")}</textarea></label>
-    <div class="c-foot" style="margin-top:0;justify-content:flex-start"><button type="button" class="v-btn" data-act="e-savetpl">이 문구를 템플릿으로 저장</button></div></div>
-  <div class="c-two">
-    <div class="c-col"><label>발송 대상 (엑셀에서 복사해 붙여넣기)<textarea id="fTargets" class="c-raw" rows="7" placeholder="이름&#9;휴대폰번호 …">${esc(c.targetsRaw||"")}</textarea></label><div class="c-hint" id="hTargets"></div></div>
-    <div class="c-col"><label>구매 내역 (주문 엑셀에서 복사해 붙여넣기)<textarea id="fBuyers" class="c-raw" rows="7" placeholder="주문일&#9;이름&#9;휴대폰번호&#9;결제금액 …">${esc(c.buyersRaw||"")}</textarea></label><div class="c-hint" id="hBuyers"></div></div></div>
-  <div class="c-grid">
-    <label>발송 건수 직접 입력<input id="fSentM" type="number" min="0" value="${esc(c.sentManual??"")}" placeholder="비우면 자동"></label>
-    <label>구매 건수 직접 입력<input id="fBuyM" type="number" min="0" value="${esc(c.buyersManual??"")}" placeholder="비우면 자동"></label>
-    <label>매출 직접 입력(원)<input id="fRevM" type="number" min="0" value="${esc(c.revenueManual??"")}" placeholder="비우면 자동"></label>
-    <label>메모<input id="fMemo" type="text" maxlength="200" value="${esc(c.memo||"")}"></label></div>
-  <div class="c-calc" id="fCalc"></div>
-  <div class="c-foot">${id?`<button type="button" class="v-btn danger" data-act="e-del">삭제</button>`:""}<span class="v-save">${id&&c.updatedBy?`마지막 수정 ${esc(c.updatedBy)}`:""}</span><button type="button" class="v-btn" data-act="e-close">취소</button><button type="button" class="v-btn primary" data-act="e-save">저장</button></div></div>`;
-  root.appendChild(w);recalc();w.querySelector("#fName").focus();
+/* ---------- 전화주문 전환 통계 ---------- */
+const listArr=()=>Object.entries(lists).map(([id,l])=>({id,...l})).sort((a,b)=>(b.sentAt||"").localeCompare(a.sentAt||"")||(b.createdAt||0)-(a.createdAt||0));
+function drawConv(){
+  const el=root.querySelector("#cBody"),ls=listArr();
+  el.innerHTML=!loaded?`<div class="v-blank"><b>불러오는 중…</b></div>`:!ls.length?`<div class="v-blank"><b>저장한 발송 대상 목록이 없습니다</b>'대상 분류·추출'에서 조건을 고르고 '발송 대상으로 저장'을 누르세요.</div>`
+  :`<div class="c-hint">목록을 누르고 전화주문 내역을 붙여넣으면, 그 목록의 고객 중 실제로 산 사람을 휴대폰 번호로 찾아 셉니다.</div>
+  <div class="v-table-wrap"><table class="v-table"><thead><tr><th>발송일</th><th>목록 이름</th><th>조건</th><th class="c-num">대상</th><th class="c-num">구매</th><th class="c-num">전환율</th><th class="c-num">주문</th><th class="c-num">매출</th><th>통계 갱신</th></tr></thead><tbody>${
+    ls.map(l=>{const c=l.conv;return `<tr data-act="conv" data-v="${esc(l.id)}"><td>${fmtDate(l.sentAt)}</td><td>${esc(l.name)}</td><td>${esc(l.seg||"")}</td><td class="c-num">${num(l.count)}</td><td class="c-num">${c?num(c.buyers):"-"}</td><td class="c-num">${c?pct(c.buyers,l.count):"-"}</td><td class="c-num">${c?num(c.orders):"-"}</td><td class="c-num">${c&&c.revenue?num(c.revenue):"-"}</td><td>${c?esc(`${fmtDate(c.at||"")} ${c.by||""}`):""}</td></tr>`;}).join("")
+  }</tbody></table></div>`;
 }
-function closeEdit(){document.getElementById("cEdit")?.remove();editId=null;}
-function formData(){
-  const n=v=>v===""?null:Number(v);
-  return {date:val("fDate"),name:val("fName").trim(),channel:val("fChannel"),templateName:val("fTplName").trim(),template:val("fText"),unitCost:n(val("fUnit")),
-    targetsRaw:val("fTargets"),buyersRaw:val("fBuyers"),sentManual:n(val("fSentM")),buyersManual:n(val("fBuyM")),revenueManual:n(val("fRevM")),memo:val("fMemo").trim()};
+let convId=null;
+function openConv(id){
+  closeConv();convId=id;const l=lists[id];if(!l)return;
+  const w=document.createElement("div");w.className="v-modal-wrap";w.id="cConv";
+  w.innerHTML=`<div class="v-modal c-modal" role="dialog" aria-modal="true" aria-label="전환 통계"><h2>${esc(l.name)}</h2>
+  <p class="v-save">${esc(l.seg||"")} · 대상 ${num(l.count)}명 · 저장 ${esc(l.createdBy||"")}</p>
+  <div class="c-row"><span class="c-hint" style="margin:0">발송일</span><input id="vSince" type="date" value="${esc(l.sentAt||"")}"><span class="c-hint" style="margin:0">이날 이후 주문만 셉니다(주문일 없는 줄은 셈).</span></div>
+  <textarea id="vRaw" class="c-raw" spellcheck="false" placeholder="전화주문 내역을 제목 행까지 복사해 붙여넣으세요 (주문일·고객명·휴대폰·상품명·결제금액)" aria-label="전화주문 Raw">${esc(l.convRaw||"")}</textarea>
+  <div id="vCalc"></div>
+  <div class="c-foot"><button type="button" class="v-btn danger" data-act="v-del">목록 삭제</button><button type="button" class="v-btn" data-act="v-copy">대상 번호 복사</button><button type="button" class="v-btn" data-act="v-close">닫기</button><button type="button" class="v-btn primary" data-act="v-save">통계 저장</button></div></div>`;
+  root.appendChild(w);drawConvCalc();w.querySelector("#vRaw").focus();
 }
-function recalc(){
-  if(!document.getElementById("cEdit"))return;
-  const d=formData(),k=calc(d);
-  root.querySelector("#hTargets").innerHTML=d.targetsRaw.trim()?(k.t.byPhone?`휴대폰 번호 <b>${num(k.t.count)}</b>개 인식${k.t.dup?` (중복 ${num(k.t.dup)}개 제외)`:""}`:`번호가 없어 줄 수 <b>${num(k.t.count)}</b>줄을 발송 건수로 셉니다`):"붙여넣으면 휴대폰 번호를 세어 발송 건수를 자동으로 넣습니다.";
-  root.querySelector("#hBuyers").innerHTML=d.buyersRaw.trim()?`구매자 <b>${num(k.b.buyers)}</b>명 · 주문 ${num(k.b.orders)}건 · 매출 <b>${won(k.b.revenue)}</b>${k.b.outside?` · 발송 대상이 아닌 번호 ${num(k.b.outside)}줄 제외`:""}${k.b.noPhone?` · 번호 없는 줄 ${num(k.b.noPhone)}줄 제외`:""}`:"발송 대상과 같은 번호의 주문만 구매로 셉니다. 금액은 줄마다 결제금액(콤마·'원'이 붙은 숫자)을 읽습니다.";
-  root.querySelector("#fCalc").innerHTML=`<span>발송 <b>${num(k.sent)}</b>건</span><span>구매 <b>${num(k.buyers)}</b>건</span><span>전환율 <b>${k.conv}</b></span><span>매출 <b>${won(k.revenue)}</b></span><span>객단가 <b>${k.buyers?won(k.aov):"-"}</b></span><span>비용 <b>${k.cost?won(k.cost):"-"}</b></span><span>ROAS <b>${k.roas}</b></span>`;
+function closeConv(){document.getElementById("cConv")?.remove();convId=null;}
+function drawConvModal(){if(convId&&!lists[convId])closeConv();}
+function convNow(){const l=lists[convId];if(!l)return null;return convOf(l,root.querySelector("#vRaw").value,root.querySelector("#vSince").value);}
+function drawConvCalc(){
+  const el=root.querySelector("#vCalc");if(!el)return;const r=convNow();if(!r)return;
+  const prods=Object.entries(r.byProd).sort((a,b)=>b[1]-a[1]);
+  el.innerHTML=`<div class="c-stats">
+    <div class="v-kpi"><span>대상</span><b>${num(r.targets)}<small>명</small></b></div>
+    <div class="v-kpi"><span>구매<small>전환율 ${pct(r.buyers,r.targets)}</small></span><b>${num(r.buyers)}<small>명</small></b></div>
+    <div class="v-kpi"><span>주문</span><b>${num(r.orders)}<small>건</small></b></div>
+    <div class="v-kpi"><span>매출<small>1인당 ${r.buyers?won(r.revenue/r.buyers):"-"}</small></span><b>${num(r.revenue)}<small>원</small></b></div></div>
+  <div class="c-hint">${root.querySelector("#vRaw").value.trim()?`대상이 아닌 번호 ${num(r.outside)}줄 · 발송일 전 주문 ${num(r.before)}줄 · 휴대폰 번호 없는 줄 ${num(r.skipped)}줄은 세지 않았습니다.${prods.length?`<br>상품별 구매자: ${prods.map(([p,n])=>`${esc(p)} <b>${num(n)}</b>명`).join(" · ")}`:""}`:"전화주문 내역을 붙여넣으면 바로 계산합니다."}</div>`;
 }
-async function saveEdit(){
-  const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
-  const d=formData();
-  if(!d.date){toast("발송일을 넣어주세요.");return;}
-  if(!d.name){toast("캠페인명을 넣어주세요.");return;}
-  const k=calc(d),ts=F.api.serverTimestamp(),me=who();
-  /* 목록에서 다시 계산하지만, 엑셀 내보내기·홈 화면 등에서 바로 쓰도록 계산 결과도 같이 저장한다. */
-  const row={...d,sent:k.sent,buyers:k.buyers,revenue:k.revenue,cost:k.cost,updatedAt:ts,updatedBy:me};
-  for(const x of Object.keys(row))if(row[x]===""||row[x]==null)row[x]=null;
-  try{
-    if(editId)await F.api.update(cref("campaigns/"+editId),row);
-    else await F.api.set(cref("campaigns/c"+uid()),{...row,createdAt:ts,createdBy:me});
-    toast(editId?"발송 기록을 수정했습니다.":"발송 기록을 추가했습니다.");closeEdit();
-  }catch(e){console.error(e);toast("저장하지 못했습니다. 서버 권한을 확인해주세요.");}
-}
-async function delEdit(){
-  const id=editId,c=camps[id];if(!id||!c)return;
-  if(!(await uiConfirm(`'${c.name||"발송 기록"}'을(를) 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`,{ok:"삭제"})))return;
-  try{await FBX.api.remove(cref("campaigns/"+id));toast("삭제했습니다.");closeEdit();}catch(e){console.error(e);toast("삭제하지 못했습니다.");}
-}
-/* 템플릿 불러오기: 작성 중인 문구가 있으면 바꿀지 묻는다. */
-async function useTpl(k){
-  const x=tpls[k],ta=root.querySelector("#fText");if(!x||!ta)return;
-  if(ta.value.trim()&&ta.value!==ta._tpl&&!(await uiConfirm("작성 중인 발송 문구를 템플릿 문구로 바꿀까요?",{ok:"바꾸기"})))return;
-  ta.value=x.text||"";ta._tpl=ta.value;
-  if(x.channel)root.querySelector("#fChannel").value=x.channel;
-  root.querySelector("#fTplName").value=x.name||"";recalc();
-}
-async function saveAsTpl(){
-  const text=val("fText").trim();if(!text){toast("발송 문구를 먼저 넣어주세요.");return;}
-  const name=await uiPrompt("템플릿 이름",{value:val("fTplName")||val("fName"),max:60});if(name==null||!name.trim())return;
-  const F=fb();if(!F)return;
-  try{await F.api.set(cref("templates/t"+uid()),{name:name.trim(),channel:val("fChannel"),text,updatedAt:F.api.serverTimestamp(),updatedBy:who()});
-    const nm=root.querySelector("#fTplName");if(nm)nm.value=name.trim();toast("템플릿으로 저장했습니다.");}
+async function saveConv(){
+  const F=fb();if(!F||!convId)return;const r=convNow();
+  const since=root.querySelector("#vSince").value,raw=root.querySelector("#vRaw").value;
+  try{await F.api.update(cref("lists/"+convId),{sentAt:since||null,convRaw:raw||null,conv:raw.trim()?{buyers:r.buyers,orders:r.orders,revenue:r.revenue,byProd:Object.keys(r.byProd).length?r.byProd:null,at:todayIso(),by:who()}:null});toast("전환 통계를 저장했습니다.");closeConv();}
   catch(e){console.error(e);toast("저장하지 못했습니다.");}
+}
+async function delList(){
+  const l=lists[convId];if(!l)return;
+  if(!(await uiConfirm(`발송 대상 목록 '${l.name}'(${num(l.count)}명)을 삭제할까요?\n전환 통계도 함께 지워지고 되돌릴 수 없습니다.`,{ok:"삭제"})))return;
+  try{await FBX.api.remove(cref("lists/"+convId));toast("삭제했습니다.");closeConv();}catch(e){console.error(e);toast("삭제하지 못했습니다.");}
 }
 
 /* ---------- 템플릿 관리 ---------- */
@@ -12605,22 +12626,45 @@ function drawTplModal(){
   const w=document.getElementById("cTpl");if(!w)return;
   const t=Object.entries(tpls).sort((a,b)=>String(a[1].name).localeCompare(String(b[1].name),"ko"));
   w.innerHTML=`<div class="v-modal c-modal" role="dialog" aria-modal="true" aria-label="템플릿 관리"><h2>템플릿 관리</h2>
-  <p class="v-save">자주 보내는 문구를 저장해 두고, 발송 기록을 쓸 때 '템플릿 불러오기'로 가져옵니다.</p>
-  ${t.length?`<div class="c-tpl-list">${t.map(([k,x])=>`<div class="c-tpl"><b>${esc(x.name)}</b><span class="v-save">${esc(x.channel||"")}</span><p>${esc(x.text)}</p><span><button type="button" class="v-btn" data-act="t-edit" data-v="${esc(k)}">수정</button><button type="button" class="v-btn" data-act="t-del" data-v="${esc(k)}">삭제</button></span></div>`).join("")}</div>`:`<div class="v-blank"><b>저장된 템플릿이 없습니다</b>'새 템플릿'을 누르거나 발송 기록 창에서 '이 문구를 템플릿으로 저장'을 누르세요.</div>`}
+  <p class="v-save">자주 보내는 문자·알림톡 문구를 저장해 두고 '복사'로 가져다 씁니다.</p>
+  ${t.length?`<div class="c-tpl-list">${t.map(([k,x])=>`<div class="c-tpl"><b>${esc(x.name)}</b><span class="v-save">${esc(x.updatedBy||"")}</span><p>${esc(x.text)}</p><span><button type="button" class="v-btn" data-act="t-copy" data-v="${esc(k)}">복사</button><button type="button" class="v-btn" data-act="t-edit" data-v="${esc(k)}">수정</button><button type="button" class="v-btn" data-act="t-del" data-v="${esc(k)}">삭제</button></span></div>`).join("")}</div>`:`<div class="v-blank"><b>저장된 템플릿이 없습니다</b>'새 템플릿'을 눌러 문구를 저장하세요.</div>`}
   <div class="c-foot"><button type="button" class="v-btn" data-act="t-close">닫기</button><button type="button" class="v-btn primary" data-act="t-new">새 템플릿</button></div></div>`;
 }
 async function editTpl(k){
-  const x=k?tpls[k]:{name:"",channel:"알림톡",text:""};if(k&&!x)return;
+  const x=k?tpls[k]:{name:"",text:""};if(k&&!x)return;
   const name=await uiPrompt("템플릿 이름",{value:x.name||"",max:60});if(name==null||!name.trim())return;
   const text=await uiPrompt("템플릿 문구",{value:x.text||"",max:2000});if(text==null||!text.trim())return;
   const F=fb();if(!F)return;
-  const row={name:name.trim(),channel:x.channel||"알림톡",text:text.trim(),updatedAt:F.api.serverTimestamp(),updatedBy:who()};
-  try{await F.api.set(cref("templates/"+(k||"t"+uid())),row);toast(k?"템플릿을 수정했습니다.":"템플릿을 추가했습니다.");}catch(e){console.error(e);toast("저장하지 못했습니다.");}
+  try{await F.api.set(cref("templates/"+(k||"t"+uid())),{name:name.trim(),text:text.trim(),updatedAt:F.api.serverTimestamp(),updatedBy:who()});toast(k?"템플릿을 수정했습니다.":"템플릿을 추가했습니다.");}catch(e){console.error(e);toast("저장하지 못했습니다.");}
 }
 async function delTpl(k){
   const x=tpls[k];if(!x)return;
-  if(!(await uiConfirm(`템플릿 '${x.name}'을(를) 삭제할까요?\n이미 저장한 발송 기록의 문구는 그대로 남습니다.`,{ok:"삭제"})))return;
+  if(!(await uiConfirm(`템플릿 '${x.name}'을(를) 삭제할까요?`,{ok:"삭제"})))return;
   try{await FBX.api.remove(cref("templates/"+k));}catch(e){console.error(e);toast("삭제하지 못했습니다.");}
+}
+
+function onClick(e){
+  if(e.target.id==="cTpl"){closeTpl();return;}
+  const el=e.target.closest("[data-act]");if(!el)return;
+  const v=el.dataset.v;
+  switch(el.dataset.act){
+    case "tab":S.tab=v;draw();break;
+    case "seg":S.sel=v;drawSeg();break;
+    case "copy-phones":copy(selected().list.map(c=>fmtPhone(c.phone)).join("\n"));break;
+    case "copy-rows":copy(selected().list.map(c=>`${c.name}\t${fmtPhone(c.phone)}`).join("\n"));break;
+    case "save-list":saveList();break;
+    case "conv":openConv(v);break;
+    case "v-close":closeConv();break;
+    case "v-save":saveConv();break;
+    case "v-del":delList();break;
+    case "v-copy":{const l=lists[convId];if(l)copy((l.phones||[]).map(fmtPhone).join("\n"));}break;
+    case "tpl":openTpl();break;
+    case "t-close":closeTpl();break;
+    case "t-new":editTpl(null);break;
+    case "t-edit":editTpl(v);break;
+    case "t-del":delTpl(v);break;
+    case "t-copy":{const x=tpls[v];if(x)copy(x.text);}break;
+  }
 }
 
 /* ---------- 열기·닫기 ---------- */
@@ -12635,11 +12679,10 @@ function open(){
 }
 function close(){
   if(!root||!root.classList.contains("on"))return;
-  closeEdit();closeTpl();root.classList.remove("on");
+  closeConv();closeTpl();root.classList.remove("on");
   if(typeof syncSideMenu==="function")syncSideMenu();
 }
 document.getElementById("openCrmBtn").addEventListener("click",open);
-window.crmCalc=calc;
 })();
 </script>
 <script id="pickerScript">
