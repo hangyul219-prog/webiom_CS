@@ -11296,7 +11296,10 @@ document.getElementById("vocTemplateBtn").addEventListener("click",async e=>{
 #retApp .v-table tbody td.v-pick input{position:relative;top:6px}
 #retApp td.r-act .r-res{margin:-3px 0}
 #retApp .v-table td.r-memo{cursor:text}
-#retApp .v-table .r-ed{cursor:text}#retApp .v-table td.r-cust:hover,#retApp .v-table div.r-ed:hover{background:var(--v-hover)}
+#retApp .v-table .r-ed{cursor:text}#retApp .v-table td.r-box{cursor:pointer}#retApp .v-table td.r-box:hover{background:var(--v-hover)}
+#retApp .r-boxm{width:min(640px,100%)}#retApp .r-boxf{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;margin:12px 0}
+#retApp .r-boxf label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--v-mut)}
+#retApp .r-boxf input{height:32px;padding:0 9px;border:1px solid var(--v-line);border-radius:6px;background:var(--v-bg);color:var(--v-ink);font-size:13px;outline:0}#retApp .r-boxf input:focus{border-color:var(--v-acc)}#retApp .v-table td.r-cust:hover,#retApp .v-table div.r-ed:hover{background:var(--v-hover)}
 #retApp .v-table td.r-memo:hover{background:var(--v-hover)}
 #retApp .r-memoby{display:inline-block;margin-left:6px;padding:0 6px;border-radius:9px;background:var(--v-side);color:var(--v-mut);font-size:11.5px;line-height:18px;white-space:nowrap;vertical-align:1px}
 #retApp .r-histby{cursor:help}
@@ -11759,6 +11762,38 @@ function editMemo(g){
   });
 }
 /* 고객명(한 상자 전체)·상품명·수량(줄 하나) 수기 수정. 바뀐 값은 수정기록(hist)에 남고 Ctrl+Z로 되돌릴 수 있다. */
+/* 반품 정보 수정(판매처·택배사·주문번호·반품운송장·원송장): 한 상자의 모든 줄에 같이 넣는다.
+   화면 값(판매처 자동 채움, NS·GS 주문번호 정리)이 아니라 서버에 저장된 원래 값을 보여 주고 고친다. 줄마다 값이 다른 칸은 손대지 않으면 그대로 둔다. */
+const BOX_FIELDS=[["seller","판매처"],["courier","택배사"],["orderNo","주문번호"],["retTrack","반품운송장"],["orgTrack","원송장"]];
+let boxKey=null;
+function openBoxEdit(g){
+  closeBoxEdit();boxKey=g.key;
+  const rawVal=f=>uniq(g.lines.map(l=>String((RAW.get(l.id)||{})[f]??"").trim())).join(", ");
+  const opts=f=>uniq([...items.values()].map(l=>String((RAW.get(l.id)||{})[f]||"").trim()).filter(Boolean)).sort((a,b)=>a.localeCompare(b,"ko")).slice(0,300);
+  const w=document.createElement("div");w.className="v-modal-wrap";w.id="rBoxEd";
+  w.innerHTML=`<div class="v-modal r-modal r-boxm" role="dialog" aria-modal="true" aria-label="반품 정보 수정"><h2>반품 정보 수정</h2>
+    <p class="v-save">${esc(fmtDate(g.date))} · ${esc(g.no)}번 · ${esc(uniq(g.lines.map(l=>l.customer)).join(", "))}${g.lines.length>1?` · 이 반품의 ${g.lines.length}줄에 모두 적용됩니다`:""}</p>
+    <div class="r-boxf">${BOX_FIELDS.map(([f,lab])=>{const v=rawVal(f);return `<label>${lab}<input type="text" data-f="${f}" value="${esc(v)}" data-was="${esc(v)}" maxlength="80"${f==="seller"||f==="courier"?` list="rDl_${f}"`:""} autocomplete="off"></label>`;}).join("")}</div>
+    ${["seller","courier"].map(f=>`<datalist id="rDl_${f}">${opts(f).map(o=>`<option value="${esc(o)}">`).join("")}</datalist>`).join("")}
+    <p class="v-save">판매처를 비우면 반품메모(GS·온스타일·풀필)로 자동으로 채워 보여 줍니다. 바꾼 칸은 수정기록에 남고 Ctrl+Z로 되돌릴 수 있습니다.</p>
+    <div class="r-foot"><button type="button" class="v-btn" data-act="box-close">취소</button><button type="button" class="v-btn primary" data-act="box-save">저장</button></div></div>`;
+  root.appendChild(w);w.querySelector("input").focus();
+}
+function closeBoxEdit(){document.getElementById("rBoxEd")?.remove();boxKey=null;}
+function saveBoxEdit(){
+  const w=document.getElementById("rBoxEd"),g=G.get(boxKey);if(!w)return;
+  if(!g){toast("그 사이 삭제된 반품입니다.");closeBoxEdit();return;}
+  const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
+  const ch=[...w.querySelectorAll("input[data-f]")].map(i=>[i.dataset.f,i.value.trim(),i.dataset.was]).filter(([,v,was])=>v!==was);
+  if(!ch.length){closeBoxEdit();return;}
+  if(ch.some(([f,v])=>f==="retTrack"&&!v)){toast("반품운송장은 비울 수 없습니다.");return;}
+  const ups={},ts=F.api.serverTimestamp(),me=who(),hk="h"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),ids=g.lines.map(l=>l.id);
+  for(const id of ids)for(const [f,v] of ch){const old=String((RAW.get(id)||{})[f]??"");if(old===v)continue;
+    ups[`items/${id}/${f}`]=v||null;ups[`items/${id}/hist/${hk}${f}`]={k:f,f:old,t:v,by:me,at:ts};}
+  closeBoxEdit();
+  if(!Object.keys(ups).length)return;
+  commit(ups,"반품 정보 수정 ("+ch.map(([f])=>HLAB[f]).join("·")+")").catch(saveFail);noteAct(ids,"반품 정보 수정");
+}
 function editField(lines,f){
   const lab=HLAB[f],cur=uniq(lines.map(l=>String(l[f]??"").trim())).join(", ");
   uiPrompt(`${lab} 수정`+(lines.length>1?`\n이 반품의 ${lines.length}줄 모두 바뀝니다.`:""),{value:cur,placeholder:lab,max:f==="qty"?5:f==="customer"?40:120}).then(t=>{
@@ -11893,7 +11928,7 @@ function askCost(g,seen){uiPrompt(`${COST_TEXT} 완료\n비용이 얼마인가�
 function histOf(g){const m=new Map();for(const l of g.lines)for(const [k,h] of Object.entries(l.hist||{}))if(h&&!m.has(k))m.set(k,h);return [...m.values()].sort((a,b)=>(b.at||0)-(a.at||0));}
 const editsOf=g=>histOf(g).filter(h=>h.k||h.f);
 /* 변경 로그 항목 이름. k가 없으면 처리결과 */
-const HLAB={memo:"반품메모",customer:"고객명",product:"상품명",qty:"수량"},hlab=h=>HLAB[h.k]||"처리결과";
+const HLAB={memo:"반품메모",customer:"고객명",product:"상품명",qty:"수량",seller:"판매처",courier:"택배사",orderNo:"주문번호",retTrack:"반품운송장",orgTrack:"원송장"},hlab=h=>HLAB[h.k]||"처리결과";
 /* 수정기록 창: 처리결과·반품메모 변경 로그 전체(붙여넣기 등록 제외). 줄을 누르면 그 반품을 검색한다. */
 const LOG_MAX=500;
 function openLog(){
@@ -12081,13 +12116,13 @@ function body(full){
     return [g.key,`<tr class="r-row${S.sel.has(g.key)?" sel":""}${S.copy&&S.copy.key===g.key?" r-src":""}${PM.has(g.key)?`" style="--pc:${peerColor(PM.get(g.key).keys().next().value)}`:""}" data-row="${k}" data-seen="${esc(sig(g))}">
     <td class="sticky c1 v-pick"><input type="checkbox" data-sel="${k}" aria-label="${esc(fmtDate(g.date)+" "+g.no+"번")} 선택"${S.sel.has(g.key)?" checked":""}></td>
     <td class="r-fit"><span title="${fmtDate(g.date)}${g.done?"":` · 반품일부터 ${g.age}일 지남`}"${!g.done&&g.age>AGED?' class="r-late"':""}>${fmtDate(g.date).slice(2)}</span></td>
-    <td class="r-sel" title="${esc(g.seller)}">${g.seller?(([m,...s])=>`<b>${esc(m)}</b>${s.length?`<small>${esc(s.join(" "))}</small>`:""}`)(g.seller.split("_")):""}</td>
+    <td class="r-sel r-box" data-act="box-edit" data-v="${k}" title="${esc(g.seller)} · 눌러서 판매처·주문번호·송장 수정">${g.seller?(([m,...s])=>`<b>${esc(m)}</b>${s.length?`<small>${esc(s.join(" "))}</small>`:""}`)(g.seller.split("_")):""}</td>
     <td class="r-fit r-cust r-ed" data-act="ed-cust" data-v="${k}" title="${esc(many(g,"customer").join(", "))} · 눌러서 수정">${esc(many(g,"customer").join(", "))}${histChip(g)}${voc?`<div class="r-tags">${voc}</div>`:""}</td>
     <td class="r-fit r-prod">${g.lines.map(l=>`<div class="r-ed" data-act="ed-prod" data-v="${k}" data-id="${esc(l.id)}" title="${esc(l.product)} · 눌러서 수정">${esc(l.product)}</div>`).join("")}</td>
     <td class="r-fit r-qty">${g.lines.map(l=>`<div class="r-ed" data-act="ed-qty" data-v="${k}" data-id="${esc(l.id)}" title="눌러서 수량 수정">${l.qty||""}</div>`).join("")}</td>
     <td class="r-memo${g.memo.length?" on":""}" data-act="memo" data-v="${k}" title="눌러서 반품메모 수정">${esc(memo)}${(ml=>ml?`<span class="r-memoby" title="${esc(by(ml.memoBy,ml.memoAt))} 수정">수정 · ${esc(ml.memoBy||"")}</span>`:"")(g.lines.find(l=>l.memoAt))}</td>
-    <td class="r-ord">${many(g,"orderNo").map(cp).join("")}</td>
-    <td class="r-fit r-trk">${many(g,"retTrack").map(v=>track(g,v)).join("")}${many(g,"orgTrack").map(v=>`<div class="r-org" title="원송장"><span>원</span>${cp(v)}</div>`).join("")}</td>
+    <td class="r-ord r-box" data-act="box-edit" data-v="${k}" title="빈 곳을 눌러 수정 · 번호를 누르면 복사">${many(g,"orderNo").map(cp).join("")}</td>
+    <td class="r-fit r-trk r-box" data-act="box-edit" data-v="${k}">${many(g,"retTrack").map(v=>track(g,v)).join("")}${many(g,"orgTrack").map(v=>`<div class="r-org" title="원송장"><span>원</span>${cp(v)}</div>`).join("")}</td>
     <td class="r-act">${(()=>{
       /* 처리결과는 작은 점 + 글자(처리완료 초록, 확인중 등 주황), 버튼은 오른쪽에 한 줄로 맞춘다 */
       const txt=many(g,"result").filter(Boolean).join(", ");
@@ -12218,6 +12253,7 @@ function build(){
   root.addEventListener("click",e=>{
     if(e.target.id==="rPaste"){closePaste();return;}
     if(e.target.id==="rLog"){closeLog();return;}
+    if(e.target.id==="rBoxEd"){closeBoxEdit();return;}
     const el=e.target.closest("[data-act]");
     if(!el)return;
     /* 두 번 누르기의 두 번째 클릭은 처리 버튼에서 무시한다(처리 직후 같은 자리에 생긴 다른 버튼이 눌리지 않게). */
@@ -12241,6 +12277,9 @@ function build(){
       case "edit":if(g)promptResult(g,seen);break;
       case "memo":if(g&&!String(getSelection()))editMemo(g);break;
       case "ed-cust":if(g&&!String(getSelection()))editField(g.lines,"customer");break;
+      case "box-edit":if(g&&!String(getSelection()))openBoxEdit(g);break;
+      case "box-close":closeBoxEdit();break;
+      case "box-save":saveBoxEdit();break;
       case "ed-prod":case "ed-qty":{const l=g&&g.lines.find(x=>x.id===el.dataset.id);if(l&&!String(getSelection()))editField([l],el.dataset.act==="ed-qty"?"qty":"product");}break;   /* 메모 글자를 끌어 선택(복사)하던 중이면 열지 않는다 */
       case "copy-mode":{
         if(S.copy)S.copy=null;
@@ -12296,6 +12335,7 @@ function build(){
     const a=document.activeElement;
     if(document.getElementById("rPaste")){e.preventDefault();closePaste();}
     else if(document.getElementById("rLog")){e.preventDefault();closeLog();}
+    else if(document.getElementById("rBoxEd")){e.preventDefault();closeBoxEdit();}
     else if(S.copy){e.preventDefault();S.copy=null;body();}
     else if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))a.blur();
   },true);
@@ -12312,7 +12352,7 @@ function open(){
 }
 function close(){
   if(!root||!root.classList.contains("on"))return;
-  closePaste();closeLog();S.copy=null;root.classList.remove("on");leaveMe();
+  closePaste();closeLog();closeBoxEdit();S.copy=null;root.classList.remove("on");leaveMe();
   if(typeof syncSideMenu==="function")syncSideMenu();
 }
 document.getElementById("openReturnBtn").addEventListener("click",open);
