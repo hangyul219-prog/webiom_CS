@@ -12449,7 +12449,8 @@ const fmtPhone=p=>p.length===11?p.slice(0,3)+"-"+p.slice(3,7)+"-"+p.slice(7):p.s
 /* ---------- Raw 읽기 ---------- */
 /* 휴대폰 번호를 11자리(또는 10자리) 숫자로. 주문번호처럼 더 긴 숫자 속의 일부는 잡지 않는다. */
 const PHONE_RE=/(?<![\d-])(?:\+?82[-\s]?)?0?1[016789][-\s.]?\d{3,4}[-\s.]?\d{4}(?![\d-])/g;
-const normPhone=s=>{let d=String(s).replace(/\D/g,"");if(d.startsWith("82"))d=d.slice(2);if(!d.startsWith("0"))d="0"+d;return /^01[016789]\d{7,8}$/.test(d)?d:"";};
+/* 010-0000-0000은 번호가 없을 때 넣는 자리표시라 고객 번호로 쓰지 않는다(여러 사람이 한 사람으로 묶인다). */
+const normPhone=s=>{let d=String(s).replace(/\D/g,"");if(d.startsWith("82"))d=d.slice(2);if(!d.startsWith("0"))d="0"+d;return /^01[016789]\d{7,8}$/.test(d)&&!/^01[016789]0+$/.test(d)?d:"";};
 /* 날짜: 2026-11-20 / 2026.11.20 / 2026/11/20 / 20261120 (시간이 붙어 있어도 됨) */
 const dateOf=s=>{const m=String(s||"").match(/(20\d{2})[-./년\s]*(\d{1,2})[-./월\s]*(\d{1,2})/)||String(s||"").match(/(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)/);
   if(!m)return "";const y=+m[1],mo=+m[2],d=+m[3];return mo>=1&&mo<=12&&d>=1&&d<=31?`${y}-${pad(mo)}-${pad(d)}`:"";};
@@ -12458,28 +12459,44 @@ const moneyOf=s=>{const t=String(s||"").replace(/[,\s원₩]/g,"");return /^-?\d
 const COLS={
   name:[/^(고객명|이름|성명)$/,/주문자|수령인|받는\s*분|고객명|이름|성명/],
   phone:[/휴대폰|핸드폰|모바일|HP/i,/연락처|전화/],
-  date:[/주문\s*일|구매\s*일|결제\s*일|주문\s*일시|주문\s*시간|구매\s*일시/,/최근\s*구매|최종\s*구매|일자|날짜/],
+  date:[/주문\s*일|구매\s*일|결제\s*일|주문\s*일시|주문\s*시간|구매\s*일시/,/^상담\s*(시간|일시)$|^접수\s*(일|일시|시간)$/,/최근\s*구매|최종\s*구매|일자|날짜/],
   product:[/^(상품명|제품명)$/,/상품|제품|품목/],
   amount:[/결제\s*금액|주문\s*금액|구매\s*금액|실결제/,/금액|매출|판매가|합계/],
   qty:[/수량/],
-  orderNo:[/주문\s*번호|주문\s*No/i]};
+  orderNo:[/주문\s*번호|주문\s*No/i],
+  recNo:[/^(번호|상담\s*번호|접수\s*번호)$/]};
 function detectCols(cells){
   const used=new Set(),col={};
   for(const [k,res] of Object.entries(COLS)){for(const re of res){const i=cells.findIndex((c,j)=>!used.has(j)&&re.test(String(c).trim()));if(i>=0){col[k]=i;used.add(i);break;}}}
   return col;
 }
+/* 엑셀에서 복사한 표 → 행×칸. 줄바꿈이 든 칸은 엑셀이 "…"로 감싸 주므로 그 안의 줄바꿈은 행으로 나누지 않는다. */
+function splitTable(raw){
+  const t=String(raw||""),rows=[];let row=[],cell="",q=false,i=0;
+  while(i<t.length){const ch=t[i];
+    if(q){if(ch==='"'){if(t[i+1]==='"'){cell+='"';i+=2;continue;}q=false;i++;continue;}cell+=ch;i++;continue;}
+    if(ch==='"'&&cell===""){q=true;i++;continue;}
+    if(ch==="\t"){row.push(cell);cell="";i++;continue;}
+    if(ch==="\r"){i++;continue;}
+    if(ch==="\n"){row.push(cell);rows.push(row);row=[];cell="";i++;continue;}
+    cell+=ch;i++;}
+  if(cell!==""||row.length){row.push(cell);rows.push(row);}
+  return rows.filter(r=>r.some(c=>String(c).trim()));
+}
 /* Raw 한 덩어리 → 줄 목록 [{phone,name,date,product,amount}]. 제목 행이 있으면 칸 이름으로, 없으면 줄에서 번호·날짜를 찾아 읽는다. */
 function parseRows(raw){
-  const lines=String(raw||"").split(/\r?\n/).filter(l=>l.trim());
+  /* raw: 붙여넣은 글자, 또는 파일에서 읽은 표(행×칸 배열) */
+  const lines=Array.isArray(raw)?raw.map(r=>r.map(c=>String(c??""))):splitTable(raw);
   if(!lines.length)return {rows:[],col:null,skipped:0};
   let col=null,start=0;
-  for(let i=0;i<Math.min(lines.length,5);i++){const c=detectCols(lines[i].split("\t"));if(c.phone!=null&&(c.name!=null||c.date!=null||c.product!=null)){col=c;start=i+1;break;}}
+  let pcols=[];
+  for(let i=0;i<Math.min(lines.length,5);i++){const c=detectCols(lines[i]);if(c.phone!=null&&(c.name!=null||c.date!=null||c.product!=null)){col=c;start=i+1;pcols=[c.phone,...lines[i].map((h,j)=>/휴대폰|핸드폰|모바일|HP|연락처|전화/i.test(String(h))?j:-1).filter(j=>j>=0&&j!==c.phone)];break;}}
   const rows=[];let skipped=0;
-  for(const l of lines.slice(start)){
-    const c=l.split("\t");let phone="",r;
-    if(col){phone=normPhone(c[col.phone]||"")||((l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"");
-      r={name:String(c[col.name]??"").trim(),orderNo:col.orderNo!=null?String(c[col.orderNo]||"").trim():"",date:col.date!=null?dateOf(c[col.date]):"",product:col.product!=null?String(c[col.product]||"").trim():"",amount:col.amount!=null?moneyOf(c[col.amount]):0};}
-    else{phone=(l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"";r={name:"",orderNo:"",date:dateOf(l.replace(PHONE_RE," ")),product:"",amount:0};}
+  for(const c of lines.slice(start)){
+    const l=c.join("\t");let phone="",r;
+    if(col){for(const j of pcols){phone=normPhone(c[j]||"");if(phone)break;}
+      r={name:String(c[col.name]??"").trim(),orderNo:col.orderNo!=null?String(c[col.orderNo]||"").trim():"",recNo:col.recNo!=null?String(c[col.recNo]||"").trim():"",date:col.date!=null?dateOf(c[col.date]):"",product:col.product!=null?String(c[col.product]||"").trim():"",amount:col.amount!=null?moneyOf(c[col.amount]):0};}
+    else{phone=(l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"";r={name:"",orderNo:"",recNo:"",date:dateOf(l.replace(PHONE_RE," ")),product:"",amount:0};}
     if(!phone){skipped++;continue;}
     rows.push({phone,...r});
   }
@@ -12488,11 +12505,11 @@ function parseRows(raw){
 /* 줄 목록 → 고객(번호) 목록. 구매 = 주문일이나 상품이 있는 줄. 상품별 마지막 구매일도 모은다. */
 function customersOf(rows){
   const m=new Map();
-  /* 주문 횟수 = 주문 수(상품 여러 줄짜리 주문은 1번). 주문번호 칸이 있으면 주문번호로, 없으면 주문일로 센다. */
+  /* 주문 횟수 = 주문 수(상품 여러 줄짜리 주문은 1번). 주문번호가 있으면 주문번호로, 없으면 상담·접수 번호로, 그것도 없으면 주문일로 센다. */
   rows.forEach((r,i)=>{
     let c=m.get(r.phone);if(!c){c={phone:r.phone,name:"",orders:0,ord:new Set(),last:"",amount:0,prod:new Map()};m.set(r.phone,c);}
     if(r.name&&!c.name)c.name=r.name;
-    if(r.date||r.product){c.ord.add(r.orderNo||r.date||"#"+i);c.orders=c.ord.size;c.amount+=r.amount||0;if(r.date&&r.date>c.last)c.last=r.date;
+    if(r.date||r.product){c.ord.add(r.orderNo||(r.recNo&&"n"+r.recNo)||r.date||"#"+i);c.orders=c.ord.size;c.amount+=r.amount||0;if(r.date&&r.date>c.last)c.last=r.date;
       if(r.product){const p=c.prod.get(r.product);if(!p||r.date>p)c.prod.set(r.product,r.date||p||"");}}
   });
   return [...m.values()];
@@ -12534,13 +12551,18 @@ function convOf(list,raw,since){
   const byProd={};for(const b of buyers.values())for(const x of b.prods)byProd[x]=(byProd[x]||0)+1;
   return {targets:set.size,buyers:buyers.size,buyerPhones:[...buyers.keys()],orders,revenue,outside,before,skipped:p.skipped,byProd,col:p.col};
 }
+console.assert((()=>{
+  const raw='번호\t고객명\t전화번호\t모바일\t상담 시간\t수정 시간\t상품명\t결제금액\t주문번호\t상담 내용\n1\t김*분\t01000000000\t01032183803\t2026-11-20 14:05:07\t2026-11-21\t두뇌엔닥터PS맥스\t\t\t"쩐내 클레임\n소비기한 ""2027.12.7"""\n2\t김*분\t01000000000\t01032183803\t2026-11-20 16:00:00\t\t두뇌엔닥터PS맥스\t296000\t\t한 줄\n3\t박\t\t010-1111-2222\t20240102\t\t두뇌엔닥터PS70\t\t\t';
+  const p=parseRows(raw),cs=customersOf(p.rows),k=cs.find(c=>c.phone==="01032183803");
+  return p.rows.length===3&&p.col.date===4&&p.col.phone===3&&k.orders===2&&k.amount===296000&&k.last==="2026-11-20"&&cs.find(c=>c.name==="박").last==="2024-01-02"&&normPhone("010-0000-0000")===""&&parseRows("번호\t고객명\t모바일\t상품명\n1\t가\t01000000000\t맥스 010-3333-4444 연락").rows.length===0&&splitTable('a\t"x\ny"\tb\n').length===1;
+})(),"CRM 상담이력 양식 읽기 자가 점검 실패");
 console.assert((()=>{const r=convOf({phones:["01011111111","01022222222","01033333333"]},"주문일\t이름\t연락처\t상품\t금액\n2026-11-25\ta\t010-1111-1111\t두뇌엔닥터PS맥스\t89000\n2026-11-26\ta\t010-1111-1111\t두뇌엔닥터PS맥스\t89000\n2026-11-01\tb\t010-2222-2222\tx\t10000\n2026-11-25\tz\t010-9999-9999\tx\t5000","2026-11-23");
   return r.buyers===1&&r.orders===2&&r.revenue===178000&&r.before===1&&r.outside===1&&r.byProd["두뇌엔닥터PS맥스"]===1;})(),"CRM 전환 통계 자가 점검 실패");
 
 /* ---------- 상태 ---------- */
 /* CRM 1건 = 대상 추출 1번. crm/lists/<id>: 이름·조건·기준일·발송일·대상(targets)·전화주문 Raw·전환 통계(conv). */
 let root,main,lists={},tpls={},unsub=null,loaded=false,err="";
-const S={raw:"",ref:todayIso(),sel:"brain90",ord:"",cProd:"",cMode:"over",cDays:90,parsed:null};
+const S={raw:"",file:null,ref:todayIso(),sel:"brain90",ord:"",cProd:"",cMode:"over",cDays:90,parsed:null};
 function start(){
   const F=fb();if(!F||unsub)return;
   const u1=F.api.onValue(cref("lists"),s=>{lists=s.val()||{};loaded=true;err="";draw();drawDetailIfGone();},e=>{console.error("crm",e);err="서버 권한을 확인해주세요. Firebase Realtime Database 규칙에서 webiomCs/v1/crm 경로의 읽기·쓰기를 허용해야 합니다.";loaded=true;draw();});
@@ -12560,7 +12582,7 @@ function build(){
   root.addEventListener("mousedown",e=>{cDownOn=e.target;},true);
   root.addEventListener("click",onClick);
   root.addEventListener("input",e=>{const t=e.target;
-    if(t.id==="cRaw"){S.raw=t.value;S.parsed=null;markStale();}
+    if(t.id==="cRaw"){S.raw=t.value;if(S.raw.trim())S.file=null;S.parsed=null;markStale();}
     else if(t.id==="vRaw"){const b=root.querySelector("[data-act=v-match]");if(b)b.classList.add("primary");}
     else if(t.id==="cDays"){S.cDays=Number(t.value)||0;if(S.parsed)drawSeg();}});
   root.addEventListener("change",e=>{const t=e.target;
@@ -12589,6 +12611,7 @@ function openSeg(){
   closeSeg();const w=document.createElement("div");w.className="v-modal-wrap";w.id="cSeg";
   w.innerHTML=`<div class="v-modal c-modal c-wide" role="dialog" aria-modal="true" aria-label="대상 분류·추출"><h2>대상 분류·추출</h2>
   <div class="c-hint">고객·주문 내역을 엑셀에서 <b>제목 행까지</b> 복사해 붙여넣고 <b>분류하기</b>를 누르세요. 칸 이름(고객명·휴대폰·주문일·상품명·결제금액)으로 읽고, 휴대폰 번호 기준으로 한 사람씩 묶습니다. 주문일·상품이 없는 줄은 '구매 이력 없음'으로 봅니다.</div>
+  <div class="c-row" style="margin-top:0"><button type="button" class="v-btn" data-act="seg-file">파일 불러오기 (zip·엑셀)</button><span class="c-hint" style="margin:0" id="cFile">${S.file?`<b>${esc(S.file.name)}</b> ${num(S.file.rows.length-1)}줄을 불러왔습니다. 붙여넣으면 파일 대신 붙여넣은 내용을 씁니다.`:"CRM 상담이력 zip을 그대로 불러올 수 있습니다. 또는 아래에 붙여넣으세요."}</span></div>
   <textarea id="cRaw" class="c-raw" spellcheck="false" placeholder="주문일&#9;고객명&#9;휴대폰&#9;상품명&#9;결제금액 …" aria-label="고객·주문 Raw">${esc(S.raw)}</textarea>
   <div class="c-row"><span class="c-hint" style="margin:0">기준일</span><input id="cRef" type="date" value="${esc(S.ref)}" aria-label="경과일 기준일"><button type="button" class="v-btn primary" data-act="classify">분류하기</button><span class="c-hint" id="cInfo" style="margin:0"></span></div>
   <div id="cSegs"></div><div id="cRes"></div>
@@ -12597,10 +12620,11 @@ function openSeg(){
   if(S.parsed)drawSeg();else w.querySelector("#cRaw").focus();
 }
 function closeSeg(){document.getElementById("cSeg")?.remove();}
-function markStale(){const s=root.querySelector("#cSegs"),r=root.querySelector("#cRes"),i=root.querySelector("#cInfo");if(s)s.innerHTML="";if(r)r.innerHTML="";if(i)i.innerHTML=S.raw.trim()?"내용이 바뀌었습니다. <b>분류하기</b>를 눌러주세요.":"";}
+function markStale(){const s=root.querySelector("#cSegs"),r=root.querySelector("#cRes"),i=root.querySelector("#cInfo"),f=root.querySelector("#cFile");if(s)s.innerHTML="";if(r)r.innerHTML="";if(i)i.innerHTML=S.raw.trim()||S.file?"내용이 바뀌었습니다. <b>분류하기</b>를 눌러주세요.":"";if(f&&!S.file)f.innerHTML="CRM 상담이력 zip을 그대로 불러올 수 있습니다. 또는 아래에 붙여넣으세요.";}
 function classify(){
-  if(!S.raw.trim()){toast("고객·주문 Raw를 먼저 붙여넣으세요.");return;}
-  const p=parseRows(S.raw);S.parsed={...p,cs:customersOf(p.rows)};
+  const src=S.raw.trim()?S.raw:S.file&&S.file.rows;
+  if(!src){toast("파일을 불러오거나 고객·주문 Raw를 붙여넣으세요.");return;}
+  const p=parseRows(src);S.parsed={...p,cs:customersOf(p.rows)};
   if(!S.parsed.cs.length){toast("휴대폰 번호가 있는 줄을 찾지 못했습니다. 제목 행까지 복사했는지 확인해주세요.");}
   drawSeg();
 }
@@ -12612,7 +12636,7 @@ function customSeg(){
 function drawSeg(){
   const box=root.querySelector("#cSegs");if(!box||!S.parsed)return;
   const p=S.parsed,cs=p.cs,ref=S.ref,info=root.querySelector("#cInfo");
-  const colTxt=p.col?Object.entries({name:"고객명",phone:"휴대폰",orderNo:"주문번호",date:"주문일",product:"상품명",amount:"금액"}).filter(([k])=>p.col[k]!=null).map(([,v])=>v).join("·"):"";
+  const colTxt=p.col?Object.entries({name:"고객명",phone:"휴대폰",orderNo:"주문번호",recNo:"번호",date:"주문일",product:"상품명",amount:"금액"}).filter(([k])=>p.col[k]!=null).map(([,v])=>v).join("·"):"";
   info.innerHTML=`고객 <b>${num(cs.length)}</b>명(줄 ${num(p.rows.length)})${p.skipped?` · 휴대폰 번호 없는 줄 ${num(p.skipped)}줄 제외`:""}${colTxt?` · 읽은 칸: ${colTxt}`:` · 제목 행을 찾지 못해 번호·날짜만 읽었습니다`}`;
   if(!cs.length){box.innerHTML="";root.querySelector("#cRes").innerHTML="";return;}
   const prods=[...new Set(cs.flatMap(c=>[...c.prod.keys()]))].sort((a,b)=>a.localeCompare(b,"ko"));
@@ -12652,15 +12676,28 @@ async function extract(){
   try{const id="l"+uid();await F.api.set(cref("lists/"+id),row);toast(`CRM '${row.name}' ${num(targets.length)}명을 저장했습니다.`);closeSeg();openDetail(id);}
   catch(e){console.error(e);toast("저장하지 못했습니다. 서버 권한을 확인해주세요.");}
 }
+/* 파일 불러오기: CRM 상담이력 zip(안에 xlsx), xlsx, csv를 첫 시트 표로 읽는다. 날짜 칸은 YYYY-MM-DD HH:MM으로 바꿔 둔다. */
+const XLSX_CDN="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+let xlsxP=null;
+const loadX=()=>window.XLSX?Promise.resolve(window.XLSX):(xlsxP=xlsxP||new Promise((res,rej)=>{const sc=document.createElement("script");sc.src=XLSX_CDN;sc.onload=()=>res(window.XLSX);sc.onerror=()=>{xlsxP=null;rej(new Error("엑셀 읽기 도구를 불러오지 못했습니다. 인터넷 연결을 확인해주세요."));};document.head.appendChild(sc);}));
+async function readTableFile(file){
+  const X=await loadX();let buf=new Uint8Array(await file.arrayBuffer()),name=file.name;
+  if(/\.zip$/i.test(name)){const z=X.CFB.read(buf,{type:"array"});const i=z.FullPaths.findIndex(f=>/\.(xlsx|xls|csv)$/i.test(f));
+    if(i<0)throw new Error("zip 안에 엑셀 파일이 없습니다.");buf=z.FileIndex[i].content;name=z.FullPaths[i].split("/").pop();}
+  const wb=X.read(buf,{type:"array",cellDates:true}),ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=X.utils.sheet_to_json(ws,{header:1,raw:true,defval:""}).map(r=>r.map(c=>c instanceof Date?`${c.getFullYear()}-${pad(c.getMonth()+1)}-${pad(c.getDate())} ${pad(c.getHours())}:${pad(c.getMinutes())}`:String(c)));
+  return {name,rows:rows.filter(r=>r.some(c=>c.trim()))};
+}
+function pickFile(cb){const f=document.createElement("input");f.type="file";f.accept=".zip,.xlsx,.xls,.csv";f.onchange=()=>{const x=f.files[0];if(x)cb(x);};f.click();}
 const copy=t=>navigator.clipboard.writeText(t).then(()=>toast("복사했습니다. 엑셀이나 발송 화면에 붙여넣으세요."),()=>toast("복사하지 못했습니다."));
 
 /* ---------- CRM 1건 상세: 발송 대상 목록 + 전화주문 Raw '매칭하기' → 전환 통계 ---------- */
-let detId=null,detConv=null;
+let detId=null,detConv=null,detFile=null;
 function openDetail(id){
   closeDetail();const l=lists[id];if(!l)return;detId=id;detConv=null;
   const w=document.createElement("div");w.className="v-modal-wrap";w.id="cDetail";root.appendChild(w);drawDetail();
 }
-function closeDetail(){document.getElementById("cDetail")?.remove();detId=null;detConv=null;}
+function closeDetail(){document.getElementById("cDetail")?.remove();detId=null;detConv=null;detFile=null;}
 function drawDetailIfGone(){if(detId&&!lists[detId])closeDetail();}
 function drawDetail(){
   const w=document.getElementById("cDetail"),l=lists[detId];if(!w||!l)return;
@@ -12677,23 +12714,24 @@ function drawDetail(){
   <div class="v-table-wrap c-tbl"><table class="v-table">${T_HEAD("전화주문")}<tbody>${ts.map(t=>tRow(t,l.ref||todayIso(),mark)).join("")}</tbody></table></div>
   <div class="c-grp">전화주문 전환 통계</div>
   <div class="c-row" style="margin-top:4px"><span class="c-hint" style="margin:0">발송일</span><input id="vSince" type="date" value="${esc(l.sentAt||"")}"><span class="c-hint" style="margin:0">이날 이후 주문만 셉니다(주문일 없는 줄은 셈).</span></div>
-  <textarea id="vRaw" class="c-raw" spellcheck="false" placeholder="전화주문 내역을 제목 행까지 복사해 붙여넣고 '매칭하기'를 누르세요 (주문일·고객명·휴대폰·상품명·결제금액)" aria-label="전화주문 Raw">${esc(detConv?detConv.raw:l.convRaw||"")}</textarea>
+  <div class="c-row" style="margin-top:0"><button type="button" class="v-btn" data-act="v-file">파일 불러오기 (zip·엑셀)</button><span class="c-hint" style="margin:0" id="vFileInfo">${detFile?`<b>${esc(detFile.name)}</b> ${num(detFile.rows.length-1)}줄 · '매칭하기'를 누르세요`:l.conv&&l.conv.file?`지난번 파일: ${esc(l.conv.file)}`:""}</span></div>
+  <textarea id="vRaw" class="c-raw" spellcheck="false" placeholder="전화주문 내역 파일을 불러오거나, 제목 행까지 복사해 붙여넣고 '매칭하기'를 누르세요 (주문일·고객명·휴대폰·상품명·결제금액)" aria-label="전화주문 Raw">${esc(detConv?detConv.raw:l.convRaw||"")}</textarea>
   <div class="c-row"><button type="button" class="v-btn${detConv?"":" primary"}" data-act="v-match">매칭하기</button><span class="c-hint" style="margin:0" id="vInfo">${detConv?detConv.info:c?`저장된 통계: ${esc(c.at||"")} ${esc(c.by||"")}`:""}</span></div>
   <div class="c-foot"><button type="button" class="v-btn danger" data-act="d-del">CRM 삭제</button><button type="button" class="v-btn" data-act="d-close">닫기</button><button type="button" class="v-btn primary" data-act="v-save"${detConv?"":" disabled"}>전환 통계 저장</button></div></div>`;
 }
 function match(){
   const l=lists[detId];if(!l)return;
-  const raw=root.querySelector("#vRaw").value,since=root.querySelector("#vSince").value;
-  if(!raw.trim()){toast("전화주문 Raw를 먼저 붙여넣으세요.");return;}
-  const r=convOf({phones:targetsOf(l).map(t=>t.p)},raw,since);
+  const raw=root.querySelector("#vRaw").value,since=root.querySelector("#vSince").value,src=raw.trim()?raw:detFile&&detFile.rows;
+  if(!src){toast("전화주문 파일을 불러오거나 Raw를 붙여넣으세요.");return;}
+  const r=convOf({phones:targetsOf(l).map(t=>t.p)},src,since);
   const prods=Object.entries(r.byProd).sort((a,b)=>b[1]-a[1]);
-  detConv={...r,raw,since,phones:new Set(r.buyerPhones),
+  detConv={...r,raw,file:raw.trim()?"":detFile?detFile.name:"",since,phones:new Set(r.buyerPhones),
     info:`대상이 아닌 번호 ${num(r.outside)}줄 · 발송일 전 주문 ${num(r.before)}줄 · 휴대폰 번호 없는 줄 ${num(r.skipped)}줄은 세지 않았습니다.${prods.length?` 상품별 구매자: ${prods.map(([p,n])=>`${esc(p)} <b>${num(n)}</b>명`).join(" · ")}`:""}`};
   drawDetail();
 }
 async function saveConv(){
   const F=fb(),r=detConv;if(!F||!detId||!r)return;
-  try{await F.api.update(cref("lists/"+detId),{sentAt:r.since||null,convRaw:r.raw,conv:{buyers:r.buyers,orders:r.orders,revenue:r.revenue,byProd:Object.keys(r.byProd).length?r.byProd:null,phones:r.buyerPhones.length?r.buyerPhones:null,at:todayIso(),by:who()}});
+  try{await F.api.update(cref("lists/"+detId),{sentAt:r.since||null,convRaw:r.raw.trim()?r.raw.slice(0,200000):null,conv:{file:r.file||null,buyers:r.buyers,orders:r.orders,revenue:r.revenue,byProd:Object.keys(r.byProd).length?r.byProd:null,phones:r.buyerPhones.length?r.buyerPhones:null,at:todayIso(),by:who()}});
     toast("전환 통계를 저장했습니다.");detConv=null;drawDetail();}
   catch(e){console.error(e);toast("저장하지 못했습니다.");}
 }
@@ -12735,6 +12773,7 @@ function onClick(e){
   switch(el.dataset.act){
     case "seg-open":openSeg();break;
     case "seg-close":closeSeg();break;
+    case "seg-file":pickFile(async f=>{const el=root.querySelector("#cFile");if(el)el.textContent="불러오는 중…";try{S.file=await readTableFile(f);S.raw="";const ta=root.querySelector("#cRaw");if(ta)ta.value="";S.parsed=null;markStale();if(el)el.innerHTML=`<b>${esc(S.file.name)}</b> ${num(S.file.rows.length-1)}줄을 불러왔습니다. <b>분류하기</b>를 누르세요.`;}catch(e){console.error(e);toast(e.message||"파일을 읽지 못했습니다.");if(el)el.textContent="";}});break;
     case "classify":classify();break;
     case "seg":S.sel=v;S.ord="";drawSeg();break;
     case "ord":S.ord=v;drawRes();break;
@@ -12745,6 +12784,7 @@ function onClick(e){
     case "d-copy-phones":if(l)copy(targetsOf(l).map(t=>fmtPhone(t.p)).join("\n"));break;
     case "d-copy-rows":if(l)copy(targetsOf(l).map(t=>`${t.n||""}\t${fmtPhone(t.p)}`).join("\n"));break;
     case "v-match":match();break;
+    case "v-file":pickFile(async f=>{const el=root.querySelector("#vFileInfo");if(el)el.textContent="불러오는 중…";try{detFile=await readTableFile(f);const ta=root.querySelector("#vRaw");if(ta)ta.value="";if(el)el.innerHTML=`<b>${esc(detFile.name)}</b> ${num(detFile.rows.length-1)}줄 · '매칭하기'를 누르세요`;root.querySelector("[data-act=v-match]")?.classList.add("primary");}catch(e){console.error(e);toast(e.message||"파일을 읽지 못했습니다.");if(el)el.textContent="";}});break;
     case "v-save":saveConv();break;
     case "tpl":openTpl();break;
     case "t-close":closeTpl();break;
