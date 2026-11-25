@@ -12455,7 +12455,8 @@ const COLS={
   date:[/주문\s*일|구매\s*일|결제\s*일|주문\s*일시|주문\s*시간|구매\s*일시/,/최근\s*구매|최종\s*구매|일자|날짜/],
   product:[/^(상품명|제품명)$/,/상품|제품|품목/],
   amount:[/결제\s*금액|주문\s*금액|구매\s*금액|실결제/,/금액|매출|판매가|합계/],
-  qty:[/수량/]};
+  qty:[/수량/],
+  orderNo:[/주문\s*번호|주문\s*No/i]};
 function detectCols(cells){
   const used=new Set(),col={};
   for(const [k,res] of Object.entries(COLS)){for(const re of res){const i=cells.findIndex((c,j)=>!used.has(j)&&re.test(String(c).trim()));if(i>=0){col[k]=i;used.add(i);break;}}}
@@ -12471,8 +12472,8 @@ function parseRows(raw){
   for(const l of lines.slice(start)){
     const c=l.split("\t");let phone="",r;
     if(col){phone=normPhone(c[col.phone]||"")||((l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"");
-      r={name:String(c[col.name]??"").trim(),date:col.date!=null?dateOf(c[col.date]):"",product:col.product!=null?String(c[col.product]||"").trim():"",amount:col.amount!=null?moneyOf(c[col.amount]):0};}
-    else{phone=(l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"";r={name:"",date:dateOf(l.replace(PHONE_RE," ")),product:"",amount:0};}
+      r={name:String(c[col.name]??"").trim(),orderNo:col.orderNo!=null?String(c[col.orderNo]||"").trim():"",date:col.date!=null?dateOf(c[col.date]):"",product:col.product!=null?String(c[col.product]||"").trim():"",amount:col.amount!=null?moneyOf(c[col.amount]):0};}
+    else{phone=(l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"";r={name:"",orderNo:"",date:dateOf(l.replace(PHONE_RE," ")),product:"",amount:0};}
     if(!phone){skipped++;continue;}
     rows.push({phone,...r});
   }
@@ -12481,12 +12482,13 @@ function parseRows(raw){
 /* 줄 목록 → 고객(번호) 목록. 구매 = 주문일이나 상품이 있는 줄. 상품별 마지막 구매일도 모은다. */
 function customersOf(rows){
   const m=new Map();
-  for(const r of rows){
-    let c=m.get(r.phone);if(!c){c={phone:r.phone,name:"",orders:0,last:"",amount:0,prod:new Map()};m.set(r.phone,c);}
+  /* 주문 횟수 = 주문 수(상품 여러 줄짜리 주문은 1번). 주문번호 칸이 있으면 주문번호로, 없으면 주문일로 센다. */
+  rows.forEach((r,i)=>{
+    let c=m.get(r.phone);if(!c){c={phone:r.phone,name:"",orders:0,ord:new Set(),last:"",amount:0,prod:new Map()};m.set(r.phone,c);}
     if(r.name&&!c.name)c.name=r.name;
-    if(r.date||r.product){c.orders++;c.amount+=r.amount||0;if(r.date&&r.date>c.last)c.last=r.date;
+    if(r.date||r.product){c.ord.add(r.orderNo||r.date||"#"+i);c.orders=c.ord.size;c.amount+=r.amount||0;if(r.date&&r.date>c.last)c.last=r.date;
       if(r.product){const p=c.prod.get(r.product);if(!p||r.date>p)c.prod.set(r.product,r.date||p||"");}}
-  }
+  });
   return [...m.values()];
 }
 /* 상품 묶음. 그로우업맥스 칼슘젤리는 다른 상품이라 그로우업맥스에서 뺀다. */
@@ -12501,7 +12503,13 @@ const SEGS=[
   {id:"grow3",grp:"그로우업맥스",name:"3개월",desc:"마지막 구매 후 90~179일",test:(c,ref)=>{const d=lastOf(c,GROW),n=d?daysBetween(d,ref):-1;return n>=90&&n<180;}},
   {id:"grow6",grp:"그로우업맥스",name:"6개월",desc:"마지막 구매 후 180~364일",test:(c,ref)=>{const d=lastOf(c,GROW),n=d?daysBetween(d,ref):-1;return n>=180&&n<365;}},
   {id:"grow12",grp:"그로우업맥스",name:"12개월",desc:"마지막 구매 후 365일 이상",test:(c,ref)=>{const d=lastOf(c,GROW),n=d?daysBetween(d,ref):-1;return n>=365;}},
+  {id:"all",grp:"공통",name:"구매 고객 전체",desc:"구매 이력이 있는 모든 고객 (아래에서 주문 횟수로 나누기)",test:c=>c.orders>0},
   {id:"none",grp:"공통",name:"미구매 고객",desc:"구매 이력이 한 번도 없는 고객",test:c=>!c.orders}];
+/* 주문 횟수 나누기: 고른 조건의 고객을 다시 1·2·3·4·5회 이상으로 나눈다. */
+const ORD=[["","전체"],["1","1회"],["2","2회"],["3","3회"],["4","4회"],["5+","5회 이상"]];
+const ordHit=(c,k)=>!k||(k==="5+"?c.orders>=5:c.orders===Number(k));
+console.assert((()=>{const cs=customersOf(parseRows("주문일\t주문번호\t고객명\t휴대폰\t상품명\n2026-11-01\tA1\t홍\t010-1111-1111\t맥스\n2026-11-01\tA1\t홍\t010-1111-1111\t쇼핑백\n2026-11-05\tA2\t홍\t010-1111-1111\t맥스\n2026-10-01\t\t김\t010-2222-2222\t맥스\n2026-10-01\t\t김\t010-2222-2222\t쇼핑백").rows);
+  const h=cs.find(c=>c.name==="홍"),k=cs.find(c=>c.name==="김");return h.orders===2&&k.orders===1&&ordHit(h,"2")&&!ordHit(h,"1")&&ordHit({orders:7},"5+");})(),"CRM 주문 횟수 자가 점검 실패");
 console.assert((()=>{
   const raw="주문일\t고객명\t휴대폰\t상품명\t결제금액\n2026-11-01\t홍길동\t010-1111-1111\t두뇌엔닥터PS맥스\t89,000\n2026-07-01\t홍길동\t010-1111-1111\t두뇌엔닥터PS맥스\t89,000\n2026-07-20\t김철수\t01022222222\t두뇌엔닥터PS70(30포)\t59000\n2026-10-10\t이영희\t010-3333-3333\t에스클래스그로우업맥스(12주)\t159,000\n2026-05-01\t박민수\t010-4444-4444\t에스클래스그로우업맥스칼슘젤리\t39,000\n\t최미구\t010-5555-5555\t\t\n2025-10-01\t정오래\t010-6666-6666\tS클래스 그로우업맥스(24주)\t259,000";
   const p=parseRows(raw),cs=customersOf(p.rows),ref="2026-11-23",ids=s=>cs.filter(c=>SEGS.find(x=>x.id===s).test(c,ref)).map(c=>c.name).join();
@@ -12526,7 +12534,7 @@ console.assert((()=>{const r=convOf({phones:["01011111111","01022222222","010333
 /* ---------- 상태 ---------- */
 /* CRM 1건 = 대상 추출 1번. crm/lists/<id>: 이름·조건·기준일·발송일·대상(targets)·전화주문 Raw·전환 통계(conv). */
 let root,main,lists={},tpls={},unsub=null,loaded=false,err="";
-const S={raw:"",ref:todayIso(),sel:"brain90",cProd:"",cMode:"over",cDays:90,parsed:null};
+const S={raw:"",ref:todayIso(),sel:"brain90",ord:"",cProd:"",cMode:"over",cDays:90,parsed:null};
 function start(){
   const F=fb();if(!F||unsub)return;
   const u1=F.api.onValue(cref("lists"),s=>{lists=s.val()||{};loaded=true;err="";draw();drawDetailIfGone();},e=>{console.error("crm",e);err="서버 권한을 확인해주세요. Firebase Realtime Database 규칙에서 webiomCs/v1/crm 경로의 읽기·쓰기를 허용해야 합니다.";loaded=true;draw();});
@@ -12597,7 +12605,7 @@ function customSeg(){
 function drawSeg(){
   const box=root.querySelector("#cSegs");if(!box||!S.parsed)return;
   const p=S.parsed,cs=p.cs,ref=S.ref,info=root.querySelector("#cInfo");
-  const colTxt=p.col?Object.entries({name:"고객명",phone:"휴대폰",date:"주문일",product:"상품명",amount:"금액"}).filter(([k])=>p.col[k]!=null).map(([,v])=>v).join("·"):"";
+  const colTxt=p.col?Object.entries({name:"고객명",phone:"휴대폰",orderNo:"주문번호",date:"주문일",product:"상품명",amount:"금액"}).filter(([k])=>p.col[k]!=null).map(([,v])=>v).join("·"):"";
   info.innerHTML=`고객 <b>${num(cs.length)}</b>명(줄 ${num(p.rows.length)})${p.skipped?` · 휴대폰 번호 없는 줄 ${num(p.skipped)}줄 제외`:""}${colTxt?` · 읽은 칸: ${colTxt}`:` · 제목 행을 찾지 못해 번호·날짜만 읽었습니다`}`;
   if(!cs.length){box.innerHTML="";root.querySelector("#cRes").innerHTML="";return;}
   const prods=[...new Set(cs.flatMap(c=>[...c.prod.keys()]))].sort((a,b)=>a.localeCompare(b,"ko"));
@@ -12612,15 +12620,19 @@ function drawSeg(){
     <input id="cDays" type="number" min="0" value="${S.cDays}" aria-label="일수" style="width:80px"><span class="c-hint" style="margin:0">일</span></div>`;
   drawRes();
 }
-function selected(){const s=[...SEGS,customSeg()].find(x=>x.id===S.sel)||SEGS[0];return {s,list:S.parsed?S.parsed.cs.filter(c=>s.test(c,S.ref)):[]};}
+function selected(){
+  const s0=[...SEGS,customSeg()].find(x=>x.id===S.sel)||SEGS[0],base=S.parsed?S.parsed.cs.filter(c=>s0.test(c,S.ref)):[];
+  const lab=(ORD.find(o=>o[0]===S.ord)||ORD[0])[1];
+  return {s:{...s0,name:s0.name+(S.ord?` · 주문 ${lab}`:"")},list:S.ord?base.filter(c=>ordHit(c,S.ord)):base,base};}
 const tRow=(t,ref,mark)=>`<tr><td>${esc(t.n||"")}</td><td>${fmtPhone(t.p)}</td><td>${fmtDate(t.l||"")}</td><td class="c-num">${t.l?num(daysBetween(t.l,ref)):"-"}</td><td class="c-num">${num(t.o||0)}</td><td class="c-num">${t.a?num(t.a):"-"}</td><td title="${esc(t.pr||"")}">${esc(t.pr||"")}</td>${mark?`<td>${mark(t)}</td>`:""}</tr>`;
 const T_HEAD=extra=>`<thead><tr><th>고객명</th><th>휴대폰</th><th>마지막 구매일</th><th class="c-num">경과일</th><th class="c-num">구매 횟수</th><th class="c-num">총 구매액</th><th>구매 상품</th>${extra?`<th>${extra}</th>`:""}</tr></thead>`;
 const toT=c=>({n:c.name||"",p:c.phone,l:c.last||"",o:c.orders,a:c.amount||0,pr:[...c.prod.keys()].join(", ")});
 function drawRes(){
   const el=root.querySelector("#cRes");if(!el)return;
-  const {s,list}=selected(),show=list.slice(0,100).map(toT);
+  const {s,list,base}=selected(),show=list.slice(0,100).map(toT);
   el.innerHTML=`<div class="c-res"><div class="c-row" style="margin-top:0"><b>${esc(s.grp)} · ${esc(s.name)}</b><span class="c-hint" style="margin:0">${num(list.length)}명</span><span class="v-spacer"></span>
     <button type="button" class="v-btn primary" data-act="extract"${list.length?"":" disabled"}>추출 (CRM 1건으로 저장)</button></div>
+    ${base.some(c=>c.orders)?`<div class="c-row c-ords"><span class="c-hint" style="margin:0">주문 횟수</span>${ORD.map(([k,lab])=>`<button type="button" class="v-btn${S.ord===k?" primary":""}" data-act="ord" data-v="${k}" aria-pressed="${S.ord===k}">${lab} ${num(base.filter(c=>ordHit(c,k)).length)}명</button>`).join("")}</div>`:""}
     ${list.length?`<div class="v-table-wrap"><table class="v-table">${T_HEAD()}<tbody>${show.map(t=>tRow(t,S.ref)).join("")}</tbody></table></div>${list.length>show.length?`<div class="c-hint">미리보기는 처음 ${num(show.length)}명입니다. 추출하면 ${num(list.length)}명 모두 저장됩니다.</div>`:""}`:`<div class="c-hint">이 조건에 맞는 고객이 없습니다.</div>`}</div>`;
 }
 async function extract(){
@@ -12716,7 +12728,8 @@ function onClick(e){
     case "seg-open":openSeg();break;
     case "seg-close":closeSeg();break;
     case "classify":classify();break;
-    case "seg":S.sel=v;drawSeg();break;
+    case "seg":S.sel=v;S.ord="";drawSeg();break;
+    case "ord":S.ord=v;drawRes();break;
     case "extract":extract();break;
     case "detail":openDetail(v);break;
     case "d-close":closeDetail();break;
