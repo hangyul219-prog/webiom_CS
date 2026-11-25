@@ -12448,7 +12448,7 @@ const fmtPhone=p=>p.length===11?p.slice(0,3)+"-"+p.slice(3,7)+"-"+p.slice(7):p.s
 
 /* ---------- Raw 읽기 ---------- */
 /* 휴대폰 번호를 11자리(또는 10자리) 숫자로. 주문번호처럼 더 긴 숫자 속의 일부는 잡지 않는다. */
-const PHONE_RE=/(?<![\d-])(?:\+?82[-\s]?)?0?1[016789][-\s.]?\d{3,4}[-\s.]?\d{4}(?![\d-])/g;
+const PHONE_RE=/(?<![\d-])(?:\+?82[-\s]?)?0?1[016789][-\s.]{0,2}\d{3,4}[-\s.]{0,2}\d{4}(?![\d-])/g;
 /* 010-0000-0000은 번호가 없을 때 넣는 자리표시라 고객 번호로 쓰지 않는다(여러 사람이 한 사람으로 묶인다). */
 const normPhone=s=>{let d=String(s).replace(/\D/g,"");if(d.startsWith("82"))d=d.slice(2);if(!d.startsWith("0"))d="0"+d;return /^01[016789]\d{7,8}$/.test(d)&&!/^01[016789]0+$/.test(d)?d:"";};
 /* 날짜: 2026-11-20 / 2026.11.20 / 2026/11/20 / 20261120 (시간이 붙어 있어도 됨) */
@@ -12464,12 +12464,35 @@ const COLS={
   amount:[/결제\s*금액|주문\s*금액|구매\s*금액|실결제/,/금액|매출|판매가|합계/],
   qty:[/수량/],
   orderNo:[/주문\s*번호|주문\s*No/i],
-  recNo:[/^(번호|상담\s*번호|접수\s*번호)$/]};
+  recNo:[/^(번호|상담\s*번호|접수\s*번호)$/],
+  ask:[/^상담\s*내용$/],
+  ans:[/^처리\s*내용$/],
+  pay:[/^카테고리1_1$|^결제\s*(수단|방법)$/]};
 function detectCols(cells){
   const used=new Set(),col={};
   for(const [k,res] of Object.entries(COLS)){for(const re of res){const i=cells.findIndex((c,j)=>!used.has(j)&&re.test(String(c).trim()));if(i>=0){col[k]=i;used.add(i);break;}}}
   return col;
 }
+/* CRM 상담이력(상담 내용·처리 내용 칸이 있는 양식)에서 '주문'으로 세는 상담:
+   ① 상담 내용이 주문 문의(주문·구입·구매) ② 처리 내용에 성함 / 연락처 / 주소가 모두 있음
+   ③ 입금(계좌이체) 건은 처리 내용에 '입금 확인' 또는 '입금 완료'가 있음. 못 채우면 그 상담은 구매로 세지 않는다. */
+const ASK_RE=/주문|구입|구매/,PAYDONE_RE=/입금\s*(확인|완료)/;
+const ADDR_RE=/(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|충청|전북|전남|전라|경북|경남|경상|제주)|[가-힣]+(시|군|구)\s*[가-힣0-9]+(구|동|읍|면|리|로|길)|[가-힣0-9]+(로|길)\s*\d+/;
+const NAME_STOP=new Set("서울 부산 대구 인천 광주 대전 울산 세종 경기 강원 충북 충남 전북 전남 경북 경남 제주 맥스 카드 일시불 계좌 계좌이체 입금 입금확인 입금완료 주문 주문완료 회원 회원가입 박스 부재중 추가 연락 고객 고객님 수령인 받는분 주소 연락처 성함 사은품 쇼핑백 할부 무이자".split(" "));
+const hasName=t=>String(t).split(/[\/\n,]/).some(seg=>!ADDR_RE.test(seg)&&seg.replace(PHONE_RE," ").replace(/님|[()]/g," ").split(/\s+/).some(w=>(/^[가-힣]{2,4}$/.test(w)||/^[A-Za-z]{2,}$/.test(w))&&!NAME_STOP.has(w)));
+/* 주문이 아니면 이유를, 주문이면 ""를 준다. */
+function notOrder(ask,ans,pay){
+  ask=String(ask||"");ans=String(ans||"");
+  if(!ASK_RE.test(ask))return "ask";
+  if(!(ans.match(PHONE_RE)||[]).some(x=>normPhone(x))||!ADDR_RE.test(ans)||!hasName(ans))return "info";
+  if((/계좌/.test(pay||"")||/계좌|입금/.test(ask+" "+ans))&&!PAYDONE_RE.test(ans))return "unpaid";
+  return "";
+}
+console.assert(notOrder("주문문의","김순자 / 010-9756-9706 / 경상남도 김해시 진영읍 장등로19번길18 201동 / 입금확인함","계좌이체")===""
+  &&notOrder("주문문의","대전 중구 사정동509-3 동원빌라 204호 / 김순남 / 010-2819-9830","카드")===""
+  &&notOrder("주문 문의","이원옥(김정임)/ 010- 3133-6535 / 서울 노원구 동일로 215길23","카드")===""
+  &&notOrder("전화주문 / 계좌이체","여대일 / 010-3585-9311 / 부산광역시 북구 만덕대로155번길 14 / *미입금 종결","계좌이체")==="unpaid"
+  &&notOrder("주문문의","6+1 296,000원 안내","")==="info"&&notOrder("가격문의","김순자 / 010-9756-9706 / 서울 강서구 화곡로 31","")==="ask","CRM 주문 판정 자가 점검 실패");
 /* 엑셀에서 복사한 표 → 행×칸. 줄바꿈이 든 칸은 엑셀이 "…"로 감싸 주므로 그 안의 줄바꿈은 행으로 나누지 않는다. */
 function splitTable(raw){
   const t=String(raw||""),rows=[];let row=[],cell="",q=false,i=0;
@@ -12491,16 +12514,18 @@ function parseRows(raw){
   let col=null,start=0;
   let pcols=[];
   for(let i=0;i<Math.min(lines.length,5);i++){const c=detectCols(lines[i]);if(c.phone!=null&&(c.name!=null||c.date!=null||c.product!=null)){col=c;start=i+1;pcols=[c.phone,...lines[i].map((h,j)=>/휴대폰|핸드폰|모바일|HP|연락처|전화/i.test(String(h))?j:-1).filter(j=>j>=0&&j!==c.phone)];break;}}
-  const rows=[];let skipped=0;
+  const rows=[];let skipped=0;const rule=col&&col.ask!=null&&col.ans!=null,why={ask:0,info:0,unpaid:0};
   for(const c of lines.slice(start)){
     const l=c.join("\t");let phone="",r;
     if(col){for(const j of pcols){phone=normPhone(c[j]||"");if(phone)break;}
       r={name:String(c[col.name]??"").trim(),orderNo:col.orderNo!=null?String(c[col.orderNo]||"").trim():"",recNo:col.recNo!=null?String(c[col.recNo]||"").trim():"",date:col.date!=null?dateOf(c[col.date]):"",product:col.product!=null?String(c[col.product]||"").trim():"",amount:col.amount!=null?moneyOf(c[col.amount]):0};}
     else{phone=(l.match(PHONE_RE)||[]).map(normPhone).find(Boolean)||"";r={name:"",orderNo:"",recNo:"",date:dateOf(l.replace(PHONE_RE," ")),product:"",amount:0};}
     if(!phone){skipped++;continue;}
+    r.isOrder=true;
+    if(rule){const w=notOrder(c[col.ask],c[col.ans],col.pay!=null?c[col.pay]:"");if(w){why[w]++;r.isOrder=false;}}
     rows.push({phone,...r});
   }
-  return {rows,col,skipped};
+  return {rows,col,skipped,rule,why};
 }
 /* 줄 목록 → 고객(번호) 목록. 구매 = 주문일이나 상품이 있는 줄. 상품별 마지막 구매일도 모은다. */
 function customersOf(rows){
@@ -12509,7 +12534,7 @@ function customersOf(rows){
   rows.forEach((r,i)=>{
     let c=m.get(r.phone);if(!c){c={phone:r.phone,name:"",orders:0,ord:new Set(),last:"",amount:0,prod:new Map()};m.set(r.phone,c);}
     if(r.name&&!c.name)c.name=r.name;
-    if(r.date||r.product){c.ord.add(r.orderNo||(r.recNo&&"n"+r.recNo)||r.date||"#"+i);c.orders=c.ord.size;c.amount+=r.amount||0;if(r.date&&r.date>c.last)c.last=r.date;
+    if(r.isOrder!==false&&(r.date||r.product)){c.ord.add(r.orderNo||(r.recNo&&"n"+r.recNo)||r.date||"#"+i);c.orders=c.ord.size;c.amount+=r.amount||0;if(r.date&&r.date>c.last)c.last=r.date;
       if(r.product){const p=c.prod.get(r.product);if(!p||r.date>p)c.prod.set(r.product,r.date||p||"");}}
   });
   return [...m.values()];
@@ -12542,14 +12567,15 @@ console.assert((()=>{
 
 /* 전환 통계: 목록의 번호 중 전화주문 Raw에 나온 번호. 기준일(발송일) 이후 주문만 센다(날짜 없는 줄은 셈). */
 function convOf(list,raw,since){
-  const set=new Set(list.phones||[]),p=parseRows(raw),buyers=new Map();let orders=0,revenue=0,outside=0,before=0;
+  const set=new Set(list.phones||[]),p=parseRows(raw),buyers=new Map();let orders=0,revenue=0,outside=0,before=0,notOrd=0;
   for(const r of p.rows){
+    if(r.isOrder===false){notOrd++;continue;}
     if(!set.has(r.phone)){outside++;continue;}
     if(since&&r.date&&r.date<since){before++;continue;}
     orders++;revenue+=r.amount||0;const b=buyers.get(r.phone)||{orders:0,amount:0,prods:new Set()};b.orders++;b.amount+=r.amount||0;if(r.product)b.prods.add(r.product);buyers.set(r.phone,b);
   }
   const byProd={};for(const b of buyers.values())for(const x of b.prods)byProd[x]=(byProd[x]||0)+1;
-  return {targets:set.size,buyers:buyers.size,buyerPhones:[...buyers.keys()],orders,revenue,outside,before,skipped:p.skipped,byProd,col:p.col};
+  return {targets:set.size,buyers:buyers.size,buyerPhones:[...buyers.keys()],orders,revenue,outside,before,notOrd,skipped:p.skipped,byProd,col:p.col};
 }
 console.assert((()=>{
   const raw='번호\t고객명\t전화번호\t모바일\t상담 시간\t수정 시간\t상품명\t결제금액\t주문번호\t상담 내용\n1\t김*분\t01000000000\t01032183803\t2026-11-20 14:05:07\t2026-11-21\t두뇌엔닥터PS맥스\t\t\t"쩐내 클레임\n소비기한 ""2027.12.7"""\n2\t김*분\t01000000000\t01032183803\t2026-11-20 16:00:00\t\t두뇌엔닥터PS맥스\t296000\t\t한 줄\n3\t박\t\t010-1111-2222\t20240102\t\t두뇌엔닥터PS70\t\t\t';
@@ -12637,7 +12663,8 @@ function drawSeg(){
   const box=root.querySelector("#cSegs");if(!box||!S.parsed)return;
   const p=S.parsed,cs=p.cs,ref=S.ref,info=root.querySelector("#cInfo");
   const colTxt=p.col?Object.entries({name:"고객명",phone:"휴대폰",orderNo:"주문번호",recNo:"번호",date:"주문일",product:"상품명",amount:"금액"}).filter(([k])=>p.col[k]!=null).map(([,v])=>v).join("·"):"";
-  info.innerHTML=`고객 <b>${num(cs.length)}</b>명(줄 ${num(p.rows.length)})${p.skipped?` · 휴대폰 번호 없는 줄 ${num(p.skipped)}줄 제외`:""}${colTxt?` · 읽은 칸: ${colTxt}`:` · 제목 행을 찾지 못해 번호·날짜만 읽었습니다`}`;
+  const nOrd=p.rows.filter(r=>r.isOrder!==false).length;
+  info.innerHTML=`고객 <b>${num(cs.length)}</b>명(줄 ${num(p.rows.length)})${p.skipped?` · 휴대폰 번호 없는 줄 ${num(p.skipped)}줄 제외`:""}${p.rule?`<br>주문으로 센 상담 <b>${num(nOrd)}</b>건 · 주문 아님 ${num(p.rows.length-nOrd)}건(주문 문의 아님 ${num(p.why.ask)} · 성함/연락처/주소 없음 ${num(p.why.info)} · 입금 확인 없음 ${num(p.why.unpaid)})`:""}${colTxt?` · 읽은 칸: ${colTxt}`:` · 제목 행을 찾지 못해 번호·날짜만 읽었습니다`}`;
   if(!cs.length){box.innerHTML="";root.querySelector("#cRes").innerHTML="";return;}
   const prods=[...new Set(cs.flatMap(c=>[...c.prod.keys()]))].sort((a,b)=>a.localeCompare(b,"ko"));
   if(S.cProd&&!prods.includes(S.cProd))S.cProd="";
@@ -12726,7 +12753,7 @@ function match(){
   const r=convOf({phones:targetsOf(l).map(t=>t.p)},src,since);
   const prods=Object.entries(r.byProd).sort((a,b)=>b[1]-a[1]);
   detConv={...r,raw,file:raw.trim()?"":detFile?detFile.name:"",since,phones:new Set(r.buyerPhones),
-    info:`대상이 아닌 번호 ${num(r.outside)}줄 · 발송일 전 주문 ${num(r.before)}줄 · 휴대폰 번호 없는 줄 ${num(r.skipped)}줄은 세지 않았습니다.${prods.length?` 상품별 구매자: ${prods.map(([p,n])=>`${esc(p)} <b>${num(n)}</b>명`).join(" · ")}`:""}`};
+    info:`대상이 아닌 번호 ${num(r.outside)}줄 · 발송일 전 주문 ${num(r.before)}줄 · 휴대폰 번호 없는 줄 ${num(r.skipped)}줄${r.notOrd?` · 주문이 아닌 상담 ${num(r.notOrd)}줄`:""}은 세지 않았습니다.${prods.length?` 상품별 구매자: ${prods.map(([p,n])=>`${esc(p)} <b>${num(n)}</b>명`).join(" · ")}`:""}`};
   drawDetail();
 }
 async function saveConv(){
