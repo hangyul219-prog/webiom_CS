@@ -12400,6 +12400,8 @@ if(fb())start();
 .content:has(>#crmApp .v-modal-wrap),.content:has(>#retApp .v-modal-wrap){z-index:20}
 #crmApp .v-table{min-width:900px}
 #crmApp .c-num{text-align:right!important;font-variant-numeric:tabular-nums}
+#crmApp th.c-sort{cursor:pointer;user-select:none}#crmApp th.c-sort:hover{color:var(--v-ink)}#crmApp th.s-asc,#crmApp th.s-desc{color:var(--v-acc)}#crmApp th.s-asc::after{content:" ↑"}#crmApp th.s-desc::after{content:" ↓"}
+#crmApp .c-tbl th{position:sticky;top:0;z-index:2;background:var(--v-bg)}
 #crmApp textarea.c-raw{display:block;width:100%;height:130px;padding:9px 11px;border:1px solid var(--v-line);border-radius:7px;background:var(--v-side);resize:vertical;font-size:12px;white-space:pre;outline:0;color:var(--v-ink)}
 #crmApp textarea.c-raw:focus{border-color:var(--v-acc)}
 #crmApp .c-hint{font-size:12.5px;color:var(--v-mut);line-height:1.6;margin:6px 0}
@@ -12623,11 +12625,12 @@ function build(){
 const listArr=()=>Object.entries(lists).map(([id,l])=>({id,...l})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 function draw(){
   if(!root||!root.classList.contains("on"))return;
-  const ls=listArr();
+  const mGet=(l,k)=>{const c=l.conv;return k==="x"?l.extractedAt||"":k==="nm"?l.name:k==="seg"?l.seg||"":k==="s"?l.sentAt||"":k==="c"?l.count||0:k==="b"?(c?c.buyers:""):k==="r"?(c&&l.count?c.buyers/l.count:""):k==="o"?(c?c.orders:""):k==="v"?(c&&c.revenue?c.revenue:""):k==="w"?l.createdBy||"":"";};
+  const ls=sortRows(listArr(),mGet,SORT.main);
   main.innerHTML=`${err?`<div class="v-banner" role="alert">${esc(err)}</div>`:""}<div class="v-page v-wide v-list-page">
   <div class="v-title-row"><h1 class="v-title">CRM 관리</h1><span class="v-spacer"></span><button type="button" class="v-btn" data-act="tpl">템플릿 관리</button><button type="button" class="v-btn primary" data-act="seg-open">대상 분류·추출</button></div>
   ${!loaded?`<div class="v-blank"><b>불러오는 중…</b></div>`:!ls.length?`<div class="v-blank"><b>아직 CRM이 없습니다</b>'대상 분류·추출'에서 고객·주문 Raw를 붙여넣고 조건을 골라 추출하면 CRM 1건으로 여기에 쌓입니다.</div>`
-  :`<div class="v-table-wrap"><table class="v-table"><thead><tr><th>추출일</th><th>CRM 이름</th><th>조건</th><th>발송일</th><th class="c-num">대상</th><th class="c-num">구매</th><th class="c-num">전환율</th><th class="c-num">주문</th><th class="c-num">매출</th><th>작성</th></tr></thead><tbody>${
+  :`<div class="v-table-wrap"><table class="v-table"><thead><tr>${th("main","x","추출일")}${th("main","nm","CRM 이름")}${th("main","seg","조건")}${th("main","s","발송일")}${th("main","c","대상","c-num")}${th("main","b","구매","c-num")}${th("main","r","전환율","c-num")}${th("main","o","주문","c-num")}${th("main","v","매출","c-num")}${th("main","w","작성")}</tr></thead><tbody>${
     ls.map(l=>{const c=l.conv;return `<tr data-act="detail" data-v="${esc(l.id)}"><td>${fmtDate(l.extractedAt||"")}</td><td>${esc(l.name)}</td><td>${esc(l.seg||"")}</td><td>${fmtDate(l.sentAt||"")}</td><td class="c-num">${num(l.count)}</td><td class="c-num">${c?num(c.buyers):"-"}</td><td class="c-num">${c?pct(c.buyers,l.count):"-"}</td><td class="c-num">${c?num(c.orders):"-"}</td><td class="c-num">${c&&c.revenue?num(c.revenue):"-"}</td><td>${esc(l.createdBy||"")}</td></tr>`;}).join("")
   }</tbody></table></div>`}</div>`;
 }
@@ -12682,16 +12685,26 @@ function selected(){
   const s0=[...SEGS,customSeg()].find(x=>x.id===S.sel)||SEGS[0],base=S.parsed?S.parsed.cs.filter(c=>s0.test(c,S.ref)):[];
   const lab=(ORD.find(o=>o[0]===S.ord)||ORD[0])[1];
   return {s:{...s0,name:s0.name+(S.ord?` · 주문 ${lab}`:"")},list:S.ord?base.filter(c=>ordHit(c,S.ord)):base,base};}
+/* 열 정렬: 열 제목을 누르면 오름차순 → 내림차순 → 원래 순서. 빈 값은 방향과 상관없이 맨 뒤. */
+const SORT={main:null,det:null,res:null},KOC=new Intl.Collator("ko",{numeric:true}).compare;
+function sortRows(arr,get,st){
+  if(!st)return arr;
+  return arr.map(x=>[get(x,st.k),x]).sort((a,b)=>{const A=a[0],B=b[0],ea=A===""||A==null,eb=B===""||B==null;
+    if(ea!==eb)return ea?1:-1;if(ea)return 0;return st.d*(typeof A==="number"&&typeof B==="number"?A-B:KOC(String(A),String(B)));}).map(x=>x[1]);
+}
+const th=(t,k,label,cls="")=>{const st=SORT[t],on=st&&st.k===k;return `<th class="c-sort${cls?" "+cls:""}${on?(st.d>0?" s-asc":" s-desc"):""}" data-act="sort" data-t="${t}" data-k="${k}" aria-sort="${on?(st.d>0?"ascending":"descending"):"none"}" title="눌러서 정렬">${label}</th>`;};
+function toggleSort(t,k){const st=SORT[t];SORT[t]=!st||st.k!==k?{k,d:1}:st.d>0?{k,d:-1}:null;}
+const tGet=(ref,bought)=>(t,k)=>k==="n"?t.n:k==="p"?t.p:k==="l"?t.l:k==="d"?(t.l?daysBetween(t.l,ref):""):k==="o"?(t.o||0):k==="a"?(t.a||""):k==="pr"?t.pr:k==="b"?(bought&&bought.has(t.p)?1:0):"";
 const tRow=(t,ref,mark)=>`<tr><td>${esc(t.n||"")}</td><td>${fmtPhone(t.p)}</td><td>${fmtDate(t.l||"")}</td><td class="c-num">${t.l?num(daysBetween(t.l,ref)):"-"}</td><td class="c-num">${num(t.o||0)}</td><td class="c-num">${t.a?num(t.a):"-"}</td><td title="${esc(t.pr||"")}">${esc(t.pr||"")}</td>${mark?`<td>${mark(t)}</td>`:""}</tr>`;
-const T_HEAD=extra=>`<thead><tr><th>고객명</th><th>휴대폰</th><th>마지막 구매일</th><th class="c-num">경과일</th><th class="c-num">구매 횟수</th><th class="c-num">총 구매액</th><th>구매 상품</th>${extra?`<th>${extra}</th>`:""}</tr></thead>`;
+const T_HEAD=(t,extra)=>`<thead><tr>${th(t,"n","고객명")}${th(t,"p","휴대폰")}${th(t,"l","마지막 구매일")}${th(t,"d","경과일","c-num")}${th(t,"o","구매 횟수","c-num")}${th(t,"a","총 구매액","c-num")}${th(t,"pr","구매 상품")}${extra?th(t,"b",extra):""}</tr></thead>`;
 const toT=c=>({n:c.name||"",p:c.phone,l:c.last||"",o:c.orders,a:c.amount||0,pr:[...c.prod.keys()].join(", ")});
 function drawRes(){
   const el=root.querySelector("#cRes");if(!el)return;
-  const {s,list,base}=selected(),show=list.slice(0,100).map(toT);
+  const {s,list,base}=selected(),show=sortRows(list.map(toT),tGet(S.ref),SORT.res).slice(0,100);
   el.innerHTML=`<div class="c-res"><div class="c-row" style="margin-top:0"><b>${esc(s.grp)} · ${esc(s.name)}</b><span class="c-hint" style="margin:0">${num(list.length)}명</span><span class="v-spacer"></span>
     <button type="button" class="v-btn primary" data-act="extract"${list.length?"":" disabled"}>추출 (CRM 1건으로 저장)</button></div>
     ${base.some(c=>c.orders)?`<div class="c-row c-ords"><span class="c-hint" style="margin:0">주문 횟수</span>${ORD.map(([k,lab])=>`<button type="button" class="v-btn${S.ord===k?" primary":""}" data-act="ord" data-v="${k}" aria-pressed="${S.ord===k}">${lab} ${num(base.filter(c=>ordHit(c,k)).length)}명</button>`).join("")}</div>`:""}
-    ${list.length?`<div class="v-table-wrap"><table class="v-table">${T_HEAD()}<tbody>${show.map(t=>tRow(t,S.ref)).join("")}</tbody></table></div>${list.length>show.length?`<div class="c-hint">미리보기는 처음 ${num(show.length)}명입니다. 추출하면 ${num(list.length)}명 모두 저장됩니다.</div>`:""}`:`<div class="c-hint">이 조건에 맞는 고객이 없습니다.</div>`}</div>`;
+    ${list.length?`<div class="v-table-wrap"><table class="v-table">${T_HEAD("res")}<tbody>${show.map(t=>tRow(t,S.ref)).join("")}</tbody></table></div>${list.length>show.length?`<div class="c-hint">미리보기는 처음 ${num(show.length)}명입니다. 추출하면 ${num(list.length)}명 모두 저장됩니다.</div>`:""}`:`<div class="c-hint">이 조건에 맞는 고객이 없습니다.</div>`}</div>`;
 }
 async function extract(){
   const F=fb();if(!F){toast("서버에 연결되는 중입니다.");return;}
@@ -12716,6 +12729,19 @@ async function readTableFile(file){
   return {name,rows:rows.filter(r=>r.some(c=>c.trim()))};
 }
 function pickFile(cb){const f=document.createElement("input");f.type="file";f.accept=".zip,.xlsx,.xls,.csv";f.onchange=()=>{const x=f.files[0];if(x)cb(x);};f.click();}
+/* CRM 1건의 발송 대상을 엑셀로: 지금 화면의 정렬 순서 그대로. */
+async function exportDetail(){
+  const l=lists[detId];if(!l)return;
+  try{const X=await loadX(),bought=detConv?detConv.phones:new Set(l.conv&&l.conv.phones||[]),ref=l.ref||todayIso();
+    const ts=sortRows(targetsOf(l),tGet(ref,bought),SORT.det);
+    const aoa=[["고객명","휴대폰","마지막 구매일","경과일","구매 횟수","총 구매액","구매 상품","전화주문 구매"],
+      ...ts.map(t=>[t.n||"",fmtPhone(t.p),t.l||"",t.l?daysBetween(t.l,ref):"",t.o||0,t.a||0,t.pr||"",bought.has(t.p)?"구매":""])];
+    const ws=X.utils.aoa_to_sheet(aoa);ws["!cols"]=[{wch:10},{wch:15},{wch:12},{wch:7},{wch:9},{wch:12},{wch:40},{wch:12}];
+    const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,"발송 대상");
+    X.writeFile(wb,`CRM_${String(l.name).replace(/[\\/:*?"<>|]/g,"_")}.xlsx`);
+    toast(`${num(ts.length)}명을 엑셀로 내보냈습니다.`);}
+  catch(e){console.error(e);toast(e.message||"엑셀로 내보내지 못했습니다.");}
+}
 const copy=t=>navigator.clipboard.writeText(t).then(()=>toast("복사했습니다. 엑셀이나 발송 화면에 붙여넣으세요."),()=>toast("복사하지 못했습니다."));
 
 /* ---------- CRM 1건 상세: 발송 대상 목록 + 전화주문 Raw '매칭하기' → 전환 통계 ---------- */
@@ -12728,7 +12754,7 @@ function closeDetail(){document.getElementById("cDetail")?.remove();detId=null;d
 function drawDetailIfGone(){if(detId&&!lists[detId])closeDetail();}
 function drawDetail(){
   const w=document.getElementById("cDetail"),l=lists[detId];if(!w||!l)return;
-  const ts=targetsOf(l),c=detConv||l.conv,bought=detConv?detConv.phones:new Set(l.conv&&l.conv.phones||[]);
+  const c=detConv||l.conv,bought=detConv?detConv.phones:new Set(l.conv&&l.conv.phones||[]),ts=sortRows(targetsOf(l),tGet(l.ref||todayIso(),bought),SORT.det);
   const mark=t=>bought.has(t.p)?`<span class="v-pill t-green">구매</span>`:"";
   w.innerHTML=`<div class="v-modal c-modal c-wide" role="dialog" aria-modal="true" aria-label="CRM 상세"><h2>${esc(l.name)}</h2>
   <p class="v-save">${esc(l.seg||"")} · 기준일 ${fmtDate(l.ref||"")} · 추출 ${fmtDate(l.extractedAt||"")} ${esc(l.createdBy||"")}</p>
@@ -12737,8 +12763,8 @@ function drawDetail(){
     <div class="v-kpi"><span>구매<small>전환율 ${c?pct(c.buyers,ts.length):"-"}</small></span><b>${c?num(c.buyers):"-"}<small>명</small></b></div>
     <div class="v-kpi"><span>주문</span><b>${c?num(c.orders):"-"}<small>건</small></b></div>
     <div class="v-kpi"><span>매출<small>1인당 ${c&&c.buyers?won(c.revenue/c.buyers):"-"}</small></span><b>${c?num(c.revenue):"-"}<small>원</small></b></div></div>
-  <div class="c-row" style="margin-top:0"><b>발송 대상 ${num(ts.length)}명</b><span class="v-spacer"></span><button type="button" class="v-btn" data-act="d-copy-phones">휴대폰 번호 복사</button><button type="button" class="v-btn" data-act="d-copy-rows">이름·번호 복사</button></div>
-  <div class="v-table-wrap c-tbl"><table class="v-table">${T_HEAD("전화주문")}<tbody>${ts.map(t=>tRow(t,l.ref||todayIso(),mark)).join("")}</tbody></table></div>
+  <div class="c-row" style="margin-top:0"><b>발송 대상 ${num(ts.length)}명</b><span class="v-spacer"></span><button type="button" class="v-btn" data-act="d-copy-phones">휴대폰 번호 복사</button><button type="button" class="v-btn" data-act="d-copy-rows">이름·번호 복사</button><button type="button" class="v-btn" data-act="d-xlsx">엑셀 내보내기</button></div>
+  <div class="v-table-wrap c-tbl"><table class="v-table">${T_HEAD("det","전화주문")}<tbody>${ts.map(t=>tRow(t,l.ref||todayIso(),mark)).join("")}</tbody></table></div>
   <div class="c-grp">전화주문 전환 통계</div>
   <div class="c-row" style="margin-top:4px"><span class="c-hint" style="margin:0">발송일</span><input id="vSince" type="date" value="${esc(l.sentAt||"")}"><span class="c-hint" style="margin:0">이날 이후 주문만 셉니다(주문일 없는 줄은 셈).</span></div>
   <div class="c-row" style="margin-top:0"><button type="button" class="v-btn" data-act="v-file">파일 불러오기 (zip·엑셀)</button><span class="c-hint" style="margin:0" id="vFileInfo">${detFile?`<b>${esc(detFile.name)}</b> ${num(detFile.rows.length-1)}줄 · '매칭하기'를 누르세요`:l.conv&&l.conv.file?`지난번 파일: ${esc(l.conv.file)}`:""}</span></div>
@@ -12809,6 +12835,8 @@ function onClick(e){
     case "d-close":closeDetail();break;
     case "d-del":delList();break;
     case "d-copy-phones":if(l)copy(targetsOf(l).map(t=>fmtPhone(t.p)).join("\n"));break;
+    case "sort":toggleSort(el.dataset.t,el.dataset.k);el.dataset.t==="main"?draw():el.dataset.t==="det"?drawDetail():drawRes();break;
+    case "d-xlsx":exportDetail();break;
     case "d-copy-rows":if(l)copy(targetsOf(l).map(t=>`${t.n||""}\t${fmtPhone(t.p)}`).join("\n"));break;
     case "v-match":match();break;
     case "v-file":pickFile(async f=>{const el=root.querySelector("#vFileInfo");if(el)el.textContent="불러오는 중…";try{detFile=await readTableFile(f);const ta=root.querySelector("#vRaw");if(ta)ta.value="";if(el)el.innerHTML=`<b>${esc(detFile.name)}</b> ${num(detFile.rows.length-1)}줄 · '매칭하기'를 누르세요`;root.querySelector("[data-act=v-match]")?.classList.add("primary");}catch(e){console.error(e);toast(e.message||"파일을 읽지 못했습니다.");if(el)el.textContent="";}});break;
