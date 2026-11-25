@@ -11419,11 +11419,13 @@ console.assert(!isDone("확인중")&&!isDone("확인중 - 고객 회신 대기")
 /* 사방넷 반품처리를 하지 않는 홈쇼핑 판매처(2026-11-19 확정 목록). 이름이 정확히 같을 때만(띄어쓰기 무시). 그 밖의 판매처는 사방넷 버튼이 나온다. */
 const HOMESHOP_LIST=["CJ홈쇼핑_CJ직배","CJ홈쇼핑_한진직배","GS홈쇼핑_한진직배","KT알파쇼핑_CJ직배","NS홈쇼핑_CJ직배","SK스토어_CJ직배","롯데홈쇼핑_CJ직배","쇼핑엔티_CJ직배","신세계쇼핑_CJ직배","현대홈쇼핑_롯데직배","홈앤쇼핑_CJ직배"];
 const HOMESHOP_SET=new Set(HOMESHOP_LIST.map(s=>nos(s).toUpperCase()));
-const isHomeshop=s=>HOMESHOP_SET.has(nos(s).toUpperCase());
+/* 목록 이름의 '_' 앞 브랜드만 적은 판매처(예: NS홈쇼핑)도 같은 홈쇼핑으로 본다. 'GS홈쇼핑_센터'처럼 다른 꼬리가 붙은 이름은 목록에 없으면 아니다. */
+const HOMESHOP_BRAND=new Set(HOMESHOP_LIST.map(x=>nos(x.split("_")[0]).toUpperCase()));
+const isHomeshop=s=>{const k=nos(s).toUpperCase();return HOMESHOP_SET.has(k)||HOMESHOP_BRAND.has(k);};
 /* 홈쇼핑 말고도 사방넷 반품처리를 하지 않는 판매처 */
 const NO_SB=/네이버|쿠팡[\s_]*로켓/;
 console.assert(NO_SB.test("네이버")&&NO_SB.test("쿠팡_로켓그로스")&&NO_SB.test("쿠팡로켓")&&!NO_SB.test("기타")&&!NO_SB.test("전화주문")&&!NO_SB.test("쿠팡")&&!NO_SB.test("스마트스토어"),"사방넷 제외 판매처 자가 점검 실패");
-console.assert(HOMESHOP_LIST.every(isHomeshop)&&isHomeshop("NS홈쇼핑_CJ직배 ")&&!isHomeshop("CJ온스타일_센터")&&!isHomeshop("GSSHOP(센터)")&&!isHomeshop("NSS")&&!isHomeshop("SSG")&&!isHomeshop(""),"홈쇼핑 판별 자가 점검 실패");
+console.assert(HOMESHOP_LIST.every(isHomeshop)&&isHomeshop("NS홈쇼핑")&&isHomeshop(" 현대홈쇼핑 ")&&!isHomeshop("GS홈쇼핑_센터")&&!isHomeshop("현대홈쇼핑(신)")&&isHomeshop("NS홈쇼핑_CJ직배 ")&&!isHomeshop("CJ온스타일_센터")&&!isHomeshop("GSSHOP(센터)")&&!isHomeshop("NSS")&&!isHomeshop("SSG")&&!isHomeshop(""),"홈쇼핑 판별 자가 점검 실패");
 /* 미처리 경과일이 이 날수를 넘으면 빨갛게 표시한다. */
 const AGED=5,DAY=86400000,TODO_FROM="2026-09-17";
 const XLSX_URL="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
@@ -11769,7 +11771,7 @@ let boxKey=null;
 function openBoxEdit(g){
   closeBoxEdit();boxKey=g.key;
   const rawVal=f=>uniq(g.lines.map(l=>String((RAW.get(l.id)||{})[f]??"").trim())).join(", ");
-  const opts=f=>uniq([...items.values()].map(l=>String((RAW.get(l.id)||{})[f]||"").trim()).filter(Boolean)).sort((a,b)=>a.localeCompare(b,"ko")).slice(0,300);
+  const opts=f=>uniq([...(f==="seller"?HOMESHOP_LIST:[]),...[...items.values()].map(l=>String((RAW.get(l.id)||{})[f]||"").trim()).filter(Boolean).sort((a,b)=>a.localeCompare(b,"ko"))]).slice(0,300);
   const w=document.createElement("div");w.className="v-modal-wrap";w.id="rBoxEd";
   w.innerHTML=`<div class="v-modal r-modal r-boxm" role="dialog" aria-modal="true" aria-label="반품 정보 수정"><h2>반품 정보 수정</h2>
     <p class="v-save">${esc(fmtDate(g.date))} · ${esc(g.no)}번 · ${esc(uniq(g.lines.map(l=>l.customer)).join(", "))}${g.lines.length>1?` · 이 반품의 ${g.lines.length}줄에 모두 적용됩니다`:""}</p>
@@ -12250,10 +12252,13 @@ function build(){
   (document.querySelector(".content")||document.body).appendChild(root);main=root.querySelector("#rMain");
   /* 왼쪽 메뉴에서 다른 화면(FAQ·카테고리·제품정보·가격표·VOC)을 고르면 반품 화면을 닫는다. */
   document.querySelector(".side")?.addEventListener("click",e=>{if(root.classList.contains("on")&&e.target.closest(".side-link:not(#openReturnBtn),.cat"))close();},true);
+  /* 입력칸에서 글자를 드래그하다 바깥에서 놓으면 바깥 클릭으로 잡힌다. 바깥에서 누르기 시작한 경우에만 창을 닫는다. */
+  let downOn=null;root.addEventListener("mousedown",e=>{downOn=e.target;},true);
   root.addEventListener("click",e=>{
-    if(e.target.id==="rPaste"){closePaste();return;}
-    if(e.target.id==="rLog"){closeLog();return;}
-    if(e.target.id==="rBoxEd"){closeBoxEdit();return;}
+    const bg=e.target===downOn;
+    if(e.target.id==="rPaste"){if(bg)closePaste();return;}
+    if(e.target.id==="rLog"){if(bg)closeLog();return;}
+    if(e.target.id==="rBoxEd"){if(bg)closeBoxEdit();return;}
     const el=e.target.closest("[data-act]");
     if(!el)return;
     /* 두 번 누르기의 두 번째 클릭은 처리 버튼에서 무시한다(처리 직후 같은 자리에 생긴 다른 버튼이 눌리지 않게). */
@@ -12551,6 +12556,7 @@ function build(){
   root.innerHTML=`<div class="v-main" id="cMain"></div>`;
   (document.querySelector(".content")||document.body).appendChild(root);main=root.querySelector("#cMain");
   document.querySelector(".side")?.addEventListener("click",e=>{if(root.classList.contains("on")&&e.target.closest(".side-link:not(#openCrmBtn),.cat"))close();},true);
+  root.addEventListener("mousedown",e=>{cDownOn=e.target;},true);
   root.addEventListener("click",onClick);
   root.addEventListener("input",e=>{const t=e.target;
     if(t.id==="cRaw"){S.raw=t.value;S.parsed=null;markStale();}
@@ -12720,8 +12726,9 @@ async function delTpl(k){
   try{await FBX.api.remove(cref("templates/"+k));}catch(e){console.error(e);toast("삭제하지 못했습니다.");}
 }
 
+let cDownOn=null;
 function onClick(e){
-  if(e.target.id==="cTpl"){closeTpl();return;}
+  if(e.target.id==="cTpl"){if(e.target===cDownOn)closeTpl();return;}
   const el=e.target.closest("[data-act]");if(!el)return;
   const v=el.dataset.v,l=lists[detId];
   switch(el.dataset.act){
