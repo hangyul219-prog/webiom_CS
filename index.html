@@ -2052,6 +2052,12 @@ html.pc-cart-on .float{bottom:calc(var(--pc-cart-h,0px) + 14px)}
 .pp-top b{font-size:16px;font-weight:700;color:var(--ink)}
 .pp-note{font-size:12.5px;font-weight:600;color:#c05621}
 .pp-src{margin-left:auto;font-size:12px;color:var(--muted)}
+.pp-period{display:flex;flex-wrap:wrap;gap:6px 24px;margin:-4px 0 20px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.pp-per{display:flex;align-items:baseline;gap:8px;margin:0;font-size:12.5px}
+.pp-per dt{color:var(--muted);font-weight:600;white-space:nowrap}
+.pp-per dd{margin:0;color:var(--ink-2)}
+.pp-per.main{flex-basis:100%}
+.pp-per.main dt,.pp-per.main dd{font-size:14px;font-weight:700;color:var(--ink)}
 .pp-sec{margin:0 0 20px}
 .pp-sec-h{display:flex;align-items:center;gap:8px;margin:0 0 9px;font-size:14.5px;font-weight:700;color:var(--ink)}
 .pp-sec-h .cnt{padding:1px 8px;border-radius:6px;background:var(--surface-2);color:var(--ink-2);font-size:12px;font-weight:600}
@@ -3327,7 +3333,7 @@ textarea.v-in{display:block;resize:none;overflow:hidden;min-height:82px;backgrou
 <script type="application/json" id="productData">[]</script>
 <script type="application/json" id="imageData">{}</script>
 <script type="application/json" id="phoneData">[]</script>
-<script type="application/json" id="promoData">{"title":"전화주문 프로모션 가격표","note":"*50% 할인은 전단지 문구 기준","src":"전화주문_프로모션_가격표.xlsx · 가격표 시트","sections":[{"name":"두뇌엔 닥터 PS","cols":[{"h":"수량","f":"qty"},{"h":"증정","f":"gift"},{"h":"기존가","f":"won"},{"h":"추가 할인","f":"pct"},{"h":"총 할인","f":"pct"},{"h":"행사가","f":"won","cls":"po-price"},{"h":"개당가","f":"won","cls":"po-unit"},{"h":"추가구성","f":"text","cls":"pp-text"}],"items":[{"name":"두뇌엔 닥터PS 맥스","rows":[[1,null,46000,null,0.5,46000,46000,null],[3,null,129000,null,0.5,129000,43000,null],[6,1,248000,0.05,0.55,223200,31886,"트라이포텐 5병입 1개"],[12,2,492000,0.05,0.55,442800,31629,null]]},{"name":"두뇌엔 닥터PS 맥스 플러스","rows":[[1,null,55000,null,0.5,55000,55000,null],[3,null,159000,null,0.5,159000,53000,null],[6,1,296000,0.05,0.55,266400,38057,"트라이포텐 5병입 1개"],[12,2,569000,0.05,0.55,512100,36579,null]]}],"cat":"두뇌엔 닥터"},{"name":"에스클래스 그로우업 맥스","cols":[{"h":"주문 수량","f":"qty"},{"h":"받는 수량","f":"qty"},{"h":"가격","f":"won"},{"h":"행사가","f":"won","cls":"po-price"},{"h":"개당가","f":"won","cls":"po-unit"},{"h":"추가구성","f":"text","cls":"pp-text"}],"items":[{"name":"에스클래스 그로우업 맥스 4주","rows":[[1,1,199000,199000,199000,"에스클래스 포커스업 오메가3 1개"]]},{"name":"에스클래스 그로우업 맥스 12주","rows":[[1,2,529000,529000,264500,null],[2,4,890000,890000,222500,null]]}],"cat":"에스클래스"},{"name":"triPoten A3 시너지포뮬러샷","cols":[{"h":"주문 수량","f":"qty"},{"h":"받는 수량","f":"qty"},{"h":"가격","f":"won"},{"h":"행사가","f":"text","cls":"po-price"},{"h":"개당가","f":"text","cls":"po-unit"},{"h":"추가구성","f":"text","cls":"pp-text"}],"items":[{"name":"triPoten A3 시너지포뮬러샷","rows":[[1,1,99000,null,null,null]]}],"cat":"트라이포텐"}]}</script>
+<script type="application/json" id="promoData">{"title":"전화주문 프로모션 가격표","note":"*50% 할인은 전단지 문구 기준","src":"전화주문_프로모션_가격표.xlsx · 가격표 시트","sections":[{"name":"두뇌엔 닥터 PS","cols":[{"h":"수량","f":"qty"},{"h":"증정","f":"gift"},{"h":"기존가","f":"won"},{"h":"추가 할인","f":"pct"},{"h":"총 할인","f":"pct"},{"h":"행사가","f":"won","cls":"po-price"},{"h":"개당가","f":"won","cls":"po-unit"},{"h":"추가구성","f":"text","cls":"pp-text"}],"items":[{"name":"두뇌엔 닥터PS 맥스","rows":[[1,null,46000,null,0.5,46000,46000,null],[3,null,129000,null,0.5,129000,43000,null],[6,1,248000,0.05,0.55,223200,31886,"트라이포텐 5병입 1개"],[12,2,492000,0.05,0.55,442800,31629,null]]},{"name":"두뇌엔 닥터PS 맥스 플러스","rows":[[1,null,55000,null,0.5,55000,55000,null],[3,null,159000,null,0.5,159000,53000,null],[6,1,296000,0.05,0.55,266400,38057,"트라이포텐 5병입 1개"],[12,2,569000,0.05,0.55,512100,36579,null]]}],"cat":"두뇌엔 닥터"},{"name":"에스클래스 그로우업 맥스","cols":[{"h":"주문 수량","f":"qty"},{"h":"받는 수량","f":"qty"},{"h":"가격","f":"won"},{"h":"행사가","f":"won","cls":"po-price"},{"h":"개당가","f":"won","cls":"po-unit"},{"h":"추가구성","f":"text","cls":"pp-text"}],"items":[{"name":"에스클래스 그로우업 맥스 4주","rows":[[1,1,199000,199000,199000,"에스클래스 포커스업 오메가3 1개"]]},{"name":"에스클래스 그로우업 맥스 12주","rows":[[1,2,529000,529000,264500,null],[2,4,890000,890000,222500,null]]}],"cat":"에스클래스"},{"name":"triPoten A3 시너지포뮬러샷","cols":[{"h":"주문 수량","f":"qty"},{"h":"받는 수량","f":"qty"},{"h":"가격","f":"won"},{"h":"행사가","f":"text","cls":"po-price"},{"h":"개당가","f":"text","cls":"po-unit"},{"h":"추가구성","f":"text","cls":"pp-text"}],"items":[{"name":"triPoten A3 시너지포뮬러샷","rows":[[1,1,99000,null,null,null]]}],"cat":"트라이포텐"}],"period":[["행사","11/26(목) ~ 12/2(수) (7일, 오후 2시~5시 타임특가로 안내)"],["1차 발송","11/26(목) (1일차)"],["2차 발송","12/2(수) (7일차)"],["\"놓쳤다\" 예외","12/3(목) ~ 12/8(화) 경 (약 1주일, 연락 고객에게 예외 적용)"]]}</script>
 
 <script>
 const FAQ_DATA = JSON.parse(document.getElementById("faqData").textContent);
@@ -5766,7 +5772,9 @@ function promoListHtml(q){
     return `<section class="pp-sec"><h3 class="pp-sec-h">${esc(s.name)}<span class="cnt">${items.length}</span></h3><div class="po-grid pp-grid">${cards}</div></section>`;
   }).join("");
   const top = `<div class="pp-top"><b>${esc(P.title || "프로모션 가격표")}</b>${P.note ? `<span class="pp-note">${esc(P.note)}</span>` : ""}<span class="pp-src">${esc(P.src || "엑셀")} 기준 · 읽기 전용</span></div>`;
-  return {html: shown ? top + secs : "", shown};
+  /* 운영 안내 시트의 '기간 · 발송' 그대로. 첫 줄(행사 기간)을 크게 보인다. */
+  const per = (P.period || []).length ? `<dl class="pp-period" aria-label="기간 · 발송">${P.period.map(([k,v],i) => `<div class="pp-per${i ? "" : " main"}"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>` : "";
+  return {html: shown ? top + per + secs : "", shown};
 }
 
 function loadPhone(){
