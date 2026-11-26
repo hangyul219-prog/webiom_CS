@@ -12639,7 +12639,7 @@ function convOf(list,raw,since){
     orders++;revenue+=r.amount||0;const b=buyers.get(r.phone)||{orders:0,amount:0,prods:new Set()};b.orders++;b.amount+=r.amount||0;if(r.product)b.prods.add(r.product);buyers.set(r.phone,b);
   }
   const byProd={};for(const b of buyers.values())for(const x of b.prods)byProd[x]=(byProd[x]||0)+1;
-  return {targets:set.size,buyers:buyers.size,buyerPhones:[...buyers.keys()],orders,revenue,outside,before,notOrd,skipped:p.skipped,byProd,col:p.col};
+  return {targets:set.size,buyers:buyers.size,buyerPhones:[...buyers.keys()],amt:Object.fromEntries([...buyers].map(([k,b])=>[k,b.amount])),orders,revenue,outside,before,notOrd,skipped:p.skipped,byProd,col:p.col};
 }
 console.assert((()=>{
   const raw='번호\t고객명\t전화번호\t모바일\t상담 시간\t수정 시간\t상품명\t결제금액\t주문번호\t상담 내용\n1\t김*분\t01000000000\t01032183803\t2026-11-20 14:05:07\t2026-11-21\t두뇌엔닥터PS맥스\t\t\t"쩐내 클레임\n소비기한 ""2027.12.7"""\n2\t김*분\t01000000000\t01032183803\t2026-11-20 16:00:00\t\t두뇌엔닥터PS맥스\t296000\t\t한 줄\n3\t박\t\t010-1111-2222\t20240102\t\t두뇌엔닥터PS70\t\t\t';
@@ -12647,7 +12647,7 @@ console.assert((()=>{
   return p.rows.length===3&&p.col.date===4&&p.col.phone===3&&k.orders===2&&k.amount===296000&&k.last==="2026-11-20"&&cs.find(c=>c.name==="박").last==="2024-01-02"&&normPhone("010-0000-0000")===""&&parseRows("번호\t고객명\t모바일\t상품명\n1\t가\t01000000000\t맥스 010-3333-4444 연락").rows.length===0&&splitTable('a\t"x\ny"\tb\n').length===1;
 })(),"CRM 상담이력 양식 읽기 자가 점검 실패");
 console.assert((()=>{const r=convOf({phones:["01011111111","01022222222","01033333333"]},"주문일\t이름\t연락처\t상품\t금액\n2026-11-25\ta\t010-1111-1111\t두뇌엔닥터PS맥스\t89000\n2026-11-26\ta\t010-1111-1111\t두뇌엔닥터PS맥스\t89000\n2026-11-01\tb\t010-2222-2222\tx\t10000\n2026-11-25\tz\t010-9999-9999\tx\t5000","2026-11-23");
-  return r.buyers===1&&r.orders===2&&r.revenue===178000&&r.before===1&&r.outside===1&&r.byProd["두뇌엔닥터PS맥스"]===1;})(),"CRM 전환 통계 자가 점검 실패");
+  return r.buyers===1&&r.orders===2&&r.revenue===178000&&r.before===1&&r.outside===1&&r.byProd["두뇌엔닥터PS맥스"]===1&&r.amt["01011111111"]===178000;})(),"CRM 전환 통계 자가 점검 실패");
 
 /* ---------- 상태 ---------- */
 /* CRM 1건 = 대상 추출 1번. crm/lists/<id>: 이름·조건·기준일·발송일·대상(targets)·전화주문 Raw·전환 통계(conv). */
@@ -12756,9 +12756,9 @@ function sortRows(arr,get,st){
 }
 const th=(t,k,label,cls="")=>{const st=SORT[t],on=st&&st.k===k;return `<th class="c-sort${cls?" "+cls:""}${on?(st.d>0?" s-asc":" s-desc"):""}" data-act="sort" data-t="${t}" data-k="${k}" aria-sort="${on?(st.d>0?"ascending":"descending"):"none"}" title="눌러서 정렬">${label}</th>`;};
 function toggleSort(t,k){const st=SORT[t];SORT[t]=!st||st.k!==k?{k,d:1}:st.d>0?{k,d:-1}:null;}
-const tGet=(ref,bought)=>(t,k)=>k==="n"?t.n:k==="p"?t.p:k==="l"?t.l:k==="d"?(t.l?daysBetween(t.l,ref):""):k==="o"?(t.o||0):k==="a"?(t.a||""):k==="pr"?t.pr:k==="b"?(bought&&bought.has(t.p)?1:0):"";
-const tRow=(t,ref,mark)=>`<tr><td>${esc(t.n||"")}</td><td>${fmtPhone(t.p)}</td><td>${fmtDate(t.l||"")}</td><td class="c-num">${t.l?num(daysBetween(t.l,ref)):"-"}</td><td class="c-num">${num(t.o||0)}</td><td class="c-num">${t.a?num(t.a):"-"}</td><td title="${esc(t.pr||"")}">${esc(t.pr||"")}</td>${mark?`<td>${mark(t)}</td>`:""}</tr>`;
-const T_HEAD=(t,extra)=>`<thead><tr>${th(t,"n","고객명")}${th(t,"p","휴대폰")}${th(t,"l","마지막 구매일")}${th(t,"d","경과일","c-num")}${th(t,"o","구매 횟수","c-num")}${th(t,"a","총 구매액","c-num")}${th(t,"pr","구매 상품")}${extra?th(t,"b",extra):""}</tr></thead>`;
+const tGet=(ref,bought,amt)=>(t,k)=>k==="n"?t.n:k==="p"?t.p:k==="l"?t.l:k==="d"?(t.l?daysBetween(t.l,ref):""):k==="o"?(t.o||0):k==="a"?(t.a||""):k==="pr"?t.pr:k==="b"?(bought&&bought.has(t.p)?1:0):k==="ba"?(amt&&amt.get(t.p)||0):"";
+const tRow=(t,ref,mark,amt)=>`<tr><td>${esc(t.n||"")}</td><td>${fmtPhone(t.p)}</td><td>${fmtDate(t.l||"")}</td><td class="c-num">${t.l?num(daysBetween(t.l,ref)):"-"}</td><td class="c-num">${num(t.o||0)}</td>${mark?"":`<td class="c-num">${t.a?num(t.a):"-"}</td>`}<td title="${esc(t.pr||"")}">${esc(t.pr||"")}</td>${mark?`<td>${mark(t)}</td><td class="c-num">${amt&&amt.has(t.p)?(amt.get(t.p)?num(amt.get(t.p)):"-"):""}</td>`:""}</tr>`;
+const T_HEAD=(t,extra)=>`<thead><tr>${th(t,"n","고객명")}${th(t,"p","휴대폰")}${th(t,"l","마지막 구매일")}${th(t,"d","경과일","c-num")}${th(t,"o","구매 횟수","c-num")}${extra?"":th(t,"a","총 구매액","c-num")}${th(t,"pr","구매 상품")}${extra?th(t,"b",extra)+th(t,"ba","전화주문 금액","c-num"):""}</tr></thead>`;
 const toT=c=>({n:c.name||"",p:c.phone,l:c.last||"",o:c.orders,a:c.amount||0,pr:[...c.prod.keys()].join(", ")});
 function drawRes(){
   const el=root.querySelector("#cRes");if(!el)return;
@@ -12794,11 +12794,11 @@ function pickFile(cb){const f=document.createElement("input");f.type="file";f.ac
 /* CRM 1건의 발송 대상을 엑셀로: 지금 화면의 정렬 순서 그대로. */
 async function exportDetail(){
   const l=lists[detId];if(!l)return;
-  try{const X=await loadX(),bought=detConv?detConv.phones:new Set(l.conv&&l.conv.phones||[]),ref=l.ref||todayIso();
-    const ts=sortRows(targetsOf(l),tGet(ref,bought),SORT.det);
-    const aoa=[["고객명","휴대폰","마지막 구매일","경과일","구매 횟수","총 구매액","구매 상품","전화주문 구매"],
-      ...ts.map(t=>[t.n||"",fmtPhone(t.p),t.l||"",t.l?daysBetween(t.l,ref):"",t.o||0,t.a||0,t.pr||"",bought.has(t.p)?"구매":""])];
-    const ws=X.utils.aoa_to_sheet(aoa);ws["!cols"]=[{wch:10},{wch:15},{wch:12},{wch:7},{wch:9},{wch:12},{wch:40},{wch:12}];
+  try{const X=await loadX(),bought=detConv?detConv.phones:new Set(l.conv&&l.conv.phones||[]),ref=l.ref||todayIso(),amt=convAmt(l);
+    const ts=sortRows(targetsOf(l),tGet(ref,bought,amt),SORT.det);
+    const aoa=[["고객명","휴대폰","마지막 구매일","경과일","구매 횟수","구매 상품","전화주문 구매","전화주문 금액"],
+      ...ts.map(t=>[t.n||"",fmtPhone(t.p),t.l||"",t.l?daysBetween(t.l,ref):"",t.o||0,t.pr||"",bought.has(t.p)?"구매":"",amt.has(t.p)?amt.get(t.p):""])];
+    const ws=X.utils.aoa_to_sheet(aoa);ws["!cols"]=[{wch:10},{wch:15},{wch:12},{wch:7},{wch:9},{wch:40},{wch:12},{wch:13}];
     const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,"발송 대상");
     X.writeFile(wb,`CRM_${String(l.name).replace(/[\\/:*?"<>|]/g,"_")}.xlsx`);
     toast(`${num(ts.length)}명을 엑셀로 내보냈습니다.`);}
@@ -12808,6 +12808,8 @@ const copy=t=>navigator.clipboard.writeText(t).then(()=>toast("복사했습니�
 
 /* ---------- CRM 1건 상세: 발송 대상 목록 + 전화주문 Raw '매칭하기' → 전환 통계 ---------- */
 let detId=null,detConv=null,detFile=null;
+/* 1인별 전화주문 금액(이번 전환 통계의 주문만). 매칭 중이면 그 결과, 아니면 저장된 값. */
+const convAmt=l=>new Map(Object.entries((detConv?detConv.amt:l.conv&&l.conv.amt)||{}).map(([k,v])=>[k,Number(v)||0]));
 function openDetail(id){
   closeDetail();const l=lists[id];if(!l)return;detId=id;detConv=null;
   const w=document.createElement("div");w.className="v-modal-wrap";w.id="cDetail";root.appendChild(w);drawDetail();
@@ -12816,7 +12818,7 @@ function closeDetail(){document.getElementById("cDetail")?.remove();detId=null;d
 function drawDetailIfGone(){if(detId&&!lists[detId])closeDetail();}
 function drawDetail(){
   const w=document.getElementById("cDetail"),l=lists[detId];if(!w||!l)return;
-  const c=detConv||l.conv,bought=detConv?detConv.phones:new Set(l.conv&&l.conv.phones||[]),ts=sortRows(targetsOf(l),tGet(l.ref||todayIso(),bought),SORT.det);
+  const c=detConv||l.conv,bought=detConv?detConv.phones:new Set(l.conv&&l.conv.phones||[]),amt=convAmt(l),ts=sortRows(targetsOf(l),tGet(l.ref||todayIso(),bought,amt),SORT.det);
   const mark=t=>bought.has(t.p)?`<span class="v-pill t-green">구매</span>`:"";
   w.innerHTML=`<div class="v-modal c-modal c-wide" role="dialog" aria-modal="true" aria-label="CRM 상세"><h2>${esc(l.name)}</h2>
   <p class="v-save">${esc(l.seg||"")} · 기준일 ${fmtDate(l.ref||"")} · 추출 ${fmtDate(l.extractedAt||"")} ${esc(l.createdBy||"")}</p>
@@ -12826,7 +12828,7 @@ function drawDetail(){
     <div class="v-kpi"><span>주문</span><b>${c?num(c.orders):"-"}<small>건</small></b></div>
     <div class="v-kpi"><span>매출<small>1인당 ${c&&c.buyers?won(c.revenue/c.buyers):"-"}</small></span><b>${c?num(c.revenue):"-"}<small>원</small></b></div></div>
   <div class="c-row" style="margin-top:0"><b>발송 대상 ${num(ts.length)}명</b><span class="v-spacer"></span><button type="button" class="v-btn" data-act="d-copy-phones">휴대폰 번호 복사</button><button type="button" class="v-btn" data-act="d-copy-rows">이름·번호 복사</button><button type="button" class="v-btn" data-act="d-xlsx">엑셀 내보내기</button></div>
-  <div class="v-table-wrap c-tbl"><table class="v-table">${T_HEAD("det","전화주문")}<tbody>${ts.map(t=>tRow(t,l.ref||todayIso(),mark)).join("")}</tbody></table></div>
+  <div class="v-table-wrap c-tbl"><table class="v-table">${T_HEAD("det","전화주문")}<tbody>${ts.map(t=>tRow(t,l.ref||todayIso(),mark,amt)).join("")}</tbody></table></div>
   <div class="c-grp">전화주문 전환 통계</div>
   <div class="c-row" style="margin-top:4px"><span class="c-hint" style="margin:0">발송일</span><input id="vSince" type="date" value="${esc(l.sentAt||"")}"><span class="c-hint" style="margin:0">이날 이후 주문만 셉니다(주문일 없는 줄은 셈).</span></div>
   <div class="c-row" style="margin-top:0"><button type="button" class="v-btn" data-act="v-file">파일 불러오기 (zip·엑셀)</button><span class="c-hint" style="margin:0" id="vFileInfo">${detFile?`<b>${esc(detFile.name)}</b> ${num(detFile.rows.length-1)}줄 · '매칭하기'를 누르세요`:l.conv&&l.conv.file?`지난번 파일: ${esc(l.conv.file)}`:""}</span></div>
@@ -12846,7 +12848,7 @@ function match(){
 }
 async function saveConv(){
   const F=fb(),r=detConv;if(!F||!detId||!r)return;
-  try{await F.api.update(cref("lists/"+detId),{sentAt:r.since||null,convRaw:r.raw.trim()?r.raw.slice(0,200000):null,conv:{file:r.file||null,buyers:r.buyers,orders:r.orders,revenue:r.revenue,byProd:Object.keys(r.byProd).length?r.byProd:null,phones:r.buyerPhones.length?r.buyerPhones:null,at:todayIso(),by:who()}});
+  try{await F.api.update(cref("lists/"+detId),{sentAt:r.since||null,convRaw:r.raw.trim()?r.raw.slice(0,200000):null,conv:{file:r.file||null,buyers:r.buyers,orders:r.orders,revenue:r.revenue,byProd:Object.keys(r.byProd).length?r.byProd:null,phones:r.buyerPhones.length?r.buyerPhones:null,amt:r.buyerPhones.length?r.amt:null,at:todayIso(),by:who()}});
     toast("전환 통계를 저장했습니다.");detConv=null;drawDetail();}
   catch(e){console.error(e);toast("저장하지 못했습니다.");}
 }
