@@ -2046,6 +2046,22 @@ html.pc-cart-on .float{bottom:calc(var(--pc-cart-h,0px) + 14px)}
 }
 .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .po-card{min-width:0}
+/* 전화주문: 프로모션 가격표 탭 (엑셀 '가격표' 시트를 그대로, 읽기 전용) */
+#poModal.po-promo-on #poExpandAll,#poModal.po-promo-on #poCollapseAll,#poModal.po-promo-on #poAddItem{display:none}
+.pp-top{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;margin:0 0 16px}
+.pp-top b{font-size:16px;font-weight:700;color:var(--ink)}
+.pp-note{font-size:12.5px;font-weight:600;color:#c05621}
+.pp-src{margin-left:auto;font-size:12px;color:var(--muted)}
+.pp-sec{margin:0 0 20px}
+.pp-sec-h{display:flex;align-items:center;gap:8px;margin:0 0 9px;font-size:14.5px;font-weight:700;color:var(--ink)}
+.pp-sec-h .cnt{padding:1px 8px;border-radius:6px;background:var(--surface-2);color:var(--ink-2);font-size:12px;font-weight:600}
+.po-grid.pp-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,620px),1fr));padding:0!important}
+/* 같은 구역의 카드끼리 열 위치가 맞도록 고정 너비 */
+.po-table.pp-table{table-layout:fixed;min-width:600px}
+.po-table th.pp-text{width:24%}
+.po-table th.pp-text,.po-table td.pp-text{text-align:left;white-space:normal}
+.po-table td.pp-text{color:var(--ink-2)}
+.pp-blank{color:var(--muted);font-size:13.5px;font-weight:400}
 </style>
 <style id="vocStyles">
 /* ===== VOC 관리대장 (노션형 전체 화면) ===== */
@@ -3311,6 +3327,7 @@ textarea.v-in{display:block;resize:none;overflow:hidden;min-height:82px;backgrou
 <script type="application/json" id="productData">[]</script>
 <script type="application/json" id="imageData">{}</script>
 <script type="application/json" id="phoneData">[]</script>
+<script type="application/json" id="promoData">{"title":"전화주문 프로모션 가격표","note":"*50% 할인은 전단지 문구 기준","src":"전화주문_프로모션_가격표.xlsx · 가격표 시트","sections":[{"name":"두뇌엔 닥터 PS","cols":[{"h":"수량","f":"qty"},{"h":"증정","f":"gift"},{"h":"기존가","f":"won"},{"h":"추가 할인","f":"pct"},{"h":"총 할인","f":"pct"},{"h":"행사가","f":"won","cls":"po-price"},{"h":"개당가","f":"won","cls":"po-unit"},{"h":"추가구성","f":"text","cls":"pp-text"}],"items":[{"name":"두뇌엔 닥터PS 맥스","rows":[[1,null,46000,null,0.5,46000,46000,null],[3,null,129000,null,0.5,129000,43000,null],[6,1,248000,0.05,0.55,223200,31886,"트라이포텐 5병입 1개"],[12,2,492000,0.05,0.55,442800,31629,null]]},{"name":"두뇌엔 닥터PS 맥스 플러스","rows":[[1,null,55000,null,0.5,55000,55000,null],[3,null,159000,null,0.5,159000,53000,null],[6,1,296000,0.05,0.55,266400,38057,"트라이포텐 5병입 1개"],[12,2,569000,0.05,0.55,512100,36579,null]]}],"cat":"두뇌엔 닥터"},{"name":"에스클래스 그로우업 맥스","cols":[{"h":"주문 수량","f":"qty"},{"h":"받는 수량","f":"qty"},{"h":"가격","f":"won"},{"h":"행사가","f":"won","cls":"po-price"},{"h":"개당가","f":"won","cls":"po-unit"},{"h":"추가구성","f":"text","cls":"pp-text"}],"items":[{"name":"에스클래스 그로우업 맥스 4주","rows":[[1,1,199000,199000,199000,"에스클래스 포커스업 오메가3 1개"]]},{"name":"에스클래스 그로우업 맥스 12주","rows":[[1,2,529000,529000,264500,null],[2,4,890000,890000,222500,null]]}],"cat":"에스클래스"},{"name":"triPoten A3 시너지포뮬러샷","cols":[{"h":"주문 수량","f":"qty"},{"h":"받는 수량","f":"qty"},{"h":"가격","f":"won"},{"h":"행사가","f":"text","cls":"po-price"},{"h":"개당가","f":"text","cls":"po-unit"},{"h":"추가구성","f":"text","cls":"pp-text"}],"items":[{"name":"triPoten A3 시너지포뮬러샷","rows":[[1,1,99000,null,null,null]]}],"cat":"트라이포텐"}]}</script>
 
 <script>
 const FAQ_DATA = JSON.parse(document.getElementById("faqData").textContent);
@@ -3833,7 +3850,7 @@ let lastHl = "";
 function searchElsewhere(kind){
   const q = searchEl.value.trim();
   if(kind === "catalog"){ openCatalog(); catSearch.value = q; catState.q = q; renderCatList(); }
-  else { openPhone(); poSearch.value = q; poState.q = q; renderPoList(); }
+  else { if(poState.cat === PO_PROMO) poState.cat = "ALL"; openPhone(); poSearch.value = q; poState.q = q; renderPoList(); }
 }
 function rankedSection(title, cls, items, note){
   let n = 0;
@@ -5722,6 +5739,35 @@ const poSearch = document.getElementById("poSearch");
 const PO_CAT_ORDER = ["두뇌엔 닥터","고업액상","유산균","에스클래스","트라이포텐","기타"];
 let PHONE = null;
 const poState = {q:"", cat:"ALL", open:new Set(), editing:null};
+/* 프로모션 가격표 탭: 엑셀(전화주문_프로모션_가격표.xlsx) '가격표' 시트 값을 그대로 보여준다. 화면에서 수정하지 않는다. */
+const PO_PROMO = "__promo__";
+let PROMO = null;
+function loadPromo(){
+  if(!PROMO){ try{ PROMO = JSON.parse(document.getElementById("promoData").textContent); }catch(e){ PROMO = {sections:[]}; } }
+  return PROMO;
+}
+function promoItemCount(){ return loadPromo().sections.reduce((n,s) => n + s.items.length, 0); }
+function promoCell(v,f){
+  if(v === null || v === undefined || v === "") return `<span class="pp-blank">-</span>`;
+  if(f === "won") return won(v);
+  if(f === "pct") return Math.round(v * 100) + "%";
+  if(f === "qty") return `${v}개`;
+  if(f === "gift") return `+${v}개`;
+  return esc(String(v));
+}
+function promoListHtml(q){
+  const P = loadPromo(); let shown = 0;
+  const secs = P.sections.map(s => {
+    const items = s.items.filter(it => poMatchText({name:it.name, cat:[s.name, s.cat || ""].join(" ")}, q));
+    if(!items.length) return "";
+    shown += items.length;
+    const head = s.cols.map(c => `<th${c.cls === "pp-text" ? ' class="pp-text"' : ""}>${esc(c.h)}</th>`).join("");
+    const cards = items.map(it => `<article class="po-card pp-card"><div class="po-card-h"><b>${esc(it.name)}</b></div><div class="ntab-wrap"><table class="po-table pp-table"><thead><tr>${head}</tr></thead><tbody>${it.rows.map(r => `<tr>${s.cols.map((c,i) => `<td${c.cls ? ` class="${c.cls}"` : ""}>${promoCell(r[i], c.f)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></article>`).join("");
+    return `<section class="pp-sec"><h3 class="pp-sec-h">${esc(s.name)}<span class="cnt">${items.length}</span></h3><div class="po-grid pp-grid">${cards}</div></section>`;
+  }).join("");
+  const top = `<div class="pp-top"><b>${esc(P.title || "프로모션 가격표")}</b>${P.note ? `<span class="pp-note">${esc(P.note)}</span>` : ""}<span class="pp-src">${esc(P.src || "엑셀")} 기준 · 읽기 전용</span></div>`;
+  return {html: shown ? top + secs : "", shown};
+}
 
 function loadPhone(){
   if(PHONE) return;
@@ -5821,12 +5867,21 @@ function renderPoBar(){
   const cats = PO_CAT_ORDER.filter(c => PHONE.some(p => p.cat === c)).concat([...new Set(PHONE.map(p=>p.cat))].filter(c=>!PO_CAT_ORDER.includes(c)));
   const counts = new Map(); PHONE.forEach(p => counts.set(p.cat,(counts.get(p.cat)||0)+1));
   poCatsBar.innerHTML = `<button class="hcat ${poState.cat==="ALL"?"on":""}" data-cat="ALL" type="button"><span>전체</span><span class="n">${PHONE.length}</span></button>`
-    + cats.map(c => `<button class="hcat ${poState.cat===c?"on":""}" data-cat="${esc(c)}" type="button"><span>${esc(c)}</span><span class="n">${counts.get(c)}</span></button>`).join("");
+    + cats.map(c => `<button class="hcat ${poState.cat===c?"on":""}" data-cat="${esc(c)}" type="button"><span>${esc(c)}</span><span class="n">${counts.get(c)}</span></button>`).join("")
+    + (promoItemCount() ? `<button class="hcat po-promo-tab ${poState.cat===PO_PROMO?"on":""}" data-cat="${PO_PROMO}" type="button"><span>프로모션 가격표</span><span class="n">${promoItemCount()}</span></button>` : "");
 }
 function renderPoList(){
   loadPhone();
   if(typeof auditTrackPhone==="function") auditTrackPhone();
   const q = poState.q.trim();
+  poModal.classList.toggle("po-promo-on", poState.cat === PO_PROMO);
+  if(poState.cat === PO_PROMO){
+    const r = promoListHtml(q);
+    poList.innerHTML = r.html; poEmpty.hidden = r.shown > 0;
+    renderPoBar();
+    if(typeof cartRender==="function") cartRender();
+    return;
+  }
   const cats = PO_CAT_ORDER.filter(c => PHONE.some(p => p.cat === c)).concat([...new Set(PHONE.map(p=>p.cat))].filter(c=>!PO_CAT_ORDER.includes(c)));
   let html = "", shown = 0;
   cats.forEach(c => {
@@ -5854,7 +5909,7 @@ function setAllPoCats(open){
 poCatsBar.addEventListener("click", e => {
   const b = e.target.closest("[data-cat]"); if(!b) return;
   poState.cat = b.dataset.cat;
-  if(poState.cat !== "ALL") poState.open.add(poState.cat);
+  if(poState.cat !== "ALL" && poState.cat !== PO_PROMO) poState.open.add(poState.cat);
   renderPoList();
 });
 poSearch.addEventListener("input", debounce(() => { poState.q = poSearch.value; renderPoList(); }, 110));
@@ -5862,7 +5917,7 @@ document.getElementById("poExpandAll").addEventListener("click", () => setAllPoC
 document.getElementById("poCollapseAll").addEventListener("click", () => setAllPoCats(false));
 document.getElementById("poAddItem").addEventListener("click", () => {
   loadPhone();
-  const cat = poState.cat !== "ALL" ? poState.cat : "기타";
+  const cat = poState.cat !== "ALL" && poState.cat !== PO_PROMO ? poState.cat : "기타";
   const id = newId("ph");
   const prevId = poState.editing;
   PHONE.push({id, name:"새 상품", cat, match:null, tiers:[{q:1,g:0,price:0,unit:0,bonus:[],note:""}]});
@@ -7036,7 +7091,7 @@ function initSheetHub(){
     const o = e.target.closest("[data-empty-open]"); if(!o) return;
     const q = searchEl.value.trim();
     if(o.dataset.emptyOpen === "catalog"){ openCatalog(); catSearch.value = q; catState.q = q; renderCatList(); }
-    else { openPhone(); poSearch.value = q; poState.q = q; renderPoList(); }
+    else { if(poState.cat === PO_PROMO) poState.cat = "ALL"; openPhone(); poSearch.value = q; poState.q = q; renderPoList(); }
   });
 })();
 
