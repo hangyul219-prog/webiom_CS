@@ -2051,7 +2051,6 @@ html.pc-cart-on .float{bottom:calc(var(--pc-cart-h,0px) + 14px)}
 .pp-top{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;margin:0 0 16px}
 .pp-top b{font-size:16px;font-weight:700;color:var(--ink)}
 .pp-note{font-size:12.5px;font-weight:600;color:#c05621}
-.pp-src{margin-left:auto;font-size:12px;color:var(--muted)}
 .pp-period{display:flex;flex-wrap:wrap;gap:6px 24px;margin:-4px 0 20px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .pp-per{display:flex;align-items:baseline;gap:8px;margin:0;font-size:12.5px}
 .pp-per dt{color:var(--muted);font-weight:600;white-space:nowrap}
@@ -2060,14 +2059,13 @@ html.pc-cart-on .float{bottom:calc(var(--pc-cart-h,0px) + 14px)}
 .pp-per.main dt,.pp-per.main dd{font-size:14px;font-weight:700;color:var(--ink)}
 .pp-sec{margin:0 0 20px}
 .pp-sec-h{display:flex;align-items:center;gap:8px;margin:0 0 9px;font-size:14.5px;font-weight:700;color:var(--ink)}
-.pp-sec-h .cnt{padding:1px 8px;border-radius:6px;background:var(--surface-2);color:var(--ink-2);font-size:12px;font-weight:600}
 .po-grid.pp-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,620px),1fr));padding:0!important}
 /* 같은 구역의 카드끼리 열 위치가 맞도록 고정 너비 */
 .po-table.pp-table{table-layout:fixed;min-width:600px}
 .po-table th.pp-text{width:24%}
 .po-table th.pp-text,.po-table td.pp-text{text-align:left;white-space:normal}
 .po-table td.pp-text{color:var(--ink-2)}
-.pp-blank{color:var(--muted);font-size:13.5px;font-weight:400}
+
 </style>
 <style id="vocStyles">
 /* ===== VOC 관리대장 (노션형 전체 화면) ===== */
@@ -5754,7 +5752,7 @@ function loadPromo(){
 }
 function promoItemCount(){ return loadPromo().sections.reduce((n,s) => n + s.items.length, 0); }
 function promoCell(v,f){
-  if(v === null || v === undefined || v === "") return `<span class="pp-blank">-</span>`;
+  if(v === null || v === undefined || v === "") return "";
   if(f === "won") return won(v);
   if(f === "pct") return Math.round(v * 100) + "%";
   if(f === "qty") return `${v}개`;
@@ -5769,9 +5767,10 @@ function promoListHtml(q){
     shown += items.length;
     const head = s.cols.map(c => `<th${c.cls === "pp-text" ? ' class="pp-text"' : ""}>${esc(c.h)}</th>`).join("");
     const cards = items.map(it => `<article class="po-card pp-card"><div class="po-card-h"><b>${esc(it.name)}</b></div><div class="ntab-wrap"><table class="po-table pp-table"><thead><tr>${head}</tr></thead><tbody>${it.rows.map(r => `<tr>${s.cols.map((c,i) => `<td${c.cls ? ` class="${c.cls}"` : ""}>${promoCell(r[i], c.f)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></article>`).join("");
-    return `<section class="pp-sec"><h3 class="pp-sec-h">${esc(s.name)}<span class="cnt">${items.length}</span></h3><div class="po-grid pp-grid">${cards}</div></section>`;
+    const dup = items.length === 1 && items[0].name === s.name;
+    return `<section class="pp-sec">${dup ? "" : `<h3 class="pp-sec-h">${esc(s.name)}</h3>`}<div class="po-grid pp-grid">${cards}</div></section>`;
   }).join("");
-  const top = `<div class="pp-top"><b>${esc(P.title || "프로모션 가격표")}</b>${P.note ? `<span class="pp-note">${esc(P.note)}</span>` : ""}<span class="pp-src">${esc(P.src || "엑셀")} 기준 · 읽기 전용</span></div>`;
+  const top = `<div class="pp-top"><b>${esc(P.title || "프로모션 가격표")}</b>${P.note ? `<span class="pp-note">${esc(P.note)}</span>` : ""}</div>`;
   /* 운영 안내 시트의 '기간 · 발송' 그대로. 첫 줄(행사 기간)을 크게 보인다. */
   const per = (P.period || []).length ? `<dl class="pp-period" aria-label="기간 · 발송">${P.period.map(([k,v],i) => `<div class="pp-per${i ? "" : " main"}"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>` : "";
   return {html: shown ? top + per + secs : "", shown};
